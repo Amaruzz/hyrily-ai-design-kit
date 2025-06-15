@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Mic, MicOff, Send, StopCircle, Volume2 } from 'lucide-react';
+import { Mic, MicOff, Send, StopCircle, Volume2, Brain, Star } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import VoiceRecorder from '@/components/VoiceRecorder';
@@ -30,6 +29,8 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [feedback, setFeedback] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -60,12 +61,47 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
     }
   };
 
+  const generateAIFeedback = async (responseText: string) => {
+    if (!responseText.trim()) return null;
+
+    setIsGeneratingFeedback(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('gemini-chat', {
+        body: {
+          prompt: `Question: ${currentQuestion?.question_text}\n\nCandidate Response: ${responseText}`,
+          type: 'feedback'
+        }
+      });
+
+      if (error) throw error;
+
+      console.log('AI Feedback received:', data);
+      return data;
+    } catch (error) {
+      console.error('Error generating AI feedback:', error);
+      toast({
+        title: "Feedback Error",
+        description: "Could not generate AI feedback. Using basic evaluation.",
+        variant: "destructive",
+      });
+      
+      // Fallback to simple feedback
+      return generateFeedback(responseText);
+    } finally {
+      setIsGeneratingFeedback(false);
+    }
+  };
+
   const saveResponse = async () => {
     if (!currentQuestion || !response.trim()) return;
 
     try {
       const newResponses = { ...responses, [currentQuestion.id]: response };
       setResponses(newResponses);
+
+      // Generate AI feedback
+      const aiFeedback = await generateAIFeedback(response);
+      setFeedback(aiFeedback);
 
       // Update session with new response
       const questionsAsked = questions.slice(0, currentIndex + 1).map(q => q.id);
@@ -74,27 +110,29 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
         .from('user_sessions')
         .update({
           questions_asked: questionsAsked,
-          responses: newResponses
+          responses: newResponses,
+          feedback: { ...responses, [currentQuestion.id]: aiFeedback }
         })
         .eq('id', sessionId);
 
-      // Generate AI feedback (simplified for now)
-      const feedback = generateFeedback(response);
-      
       setResponse('');
       
-      // Move to next question
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-        setCurrentQuestion(questions[currentIndex + 1]);
-      } else {
-        // Interview complete
-        toast({
-          title: "Interview Complete!",
-          description: "You've answered all questions. Great job!",
-        });
-        onEndSession();
-      }
+      // Show feedback for a moment before moving to next question
+      setTimeout(() => {
+        if (currentIndex < questions.length - 1) {
+          setCurrentIndex(currentIndex + 1);
+          setCurrentQuestion(questions[currentIndex + 1]);
+          setFeedback(null);
+        } else {
+          // Interview complete
+          toast({
+            title: "Interview Complete!",
+            description: "You've answered all questions. Great job!",
+          });
+          onEndSession();
+        }
+      }, 5000); // Show feedback for 5 seconds
+
     } catch (error) {
       console.error('Error saving response:', error);
       toast({
@@ -125,8 +163,15 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
   };
 
   const handleVoiceResponse = (audioBlob: Blob) => {
-    // Handle voice response - would transcribe audio in production
-    setResponse("Voice response recorded - transcription would happen here");
+    console.log('Audio blob received:', audioBlob.size, 'bytes');
+  };
+
+  const handleTranscriptReady = (transcript: string) => {
+    setResponse(transcript);
+    toast({
+      title: "Transcript Ready",
+      description: "Your speech has been converted to text",
+    });
   };
 
   if (!currentQuestion) {
@@ -196,15 +241,70 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
           </CardContent>
         </Card>
 
+        {/* AI Feedback Card */}
+        {feedback && (
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardHeader>
+              <CardTitle className="flex items-center text-blue-700">
+                <Brain className="w-5 h-5 mr-2" />
+                AI Feedback
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-blue-600">Score:</span>
+                <div className="flex items-center">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-4 h-4 ${
+                        star <= Math.round(feedback.score)
+                          ? 'text-yellow-400 fill-current'
+                          : 'text-gray-300'
+                      }`}
+                    />
+                  ))}
+                  <span className="ml-2 text-sm font-medium">{feedback.score}/5</span>
+                </div>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-blue-700 mb-2">Feedback:</p>
+                <p className="text-sm text-gray-700">{feedback.feedback}</p>
+              </div>
+              
+              {feedback.suggestions && feedback.suggestions.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-blue-700 mb-2">Suggestions:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {feedback.suggestions.map((suggestion: string, index: number) => (
+                      <li key={index} className="text-sm text-gray-700">{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Response Section */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Response</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span>Your Response</span>
+              {isGeneratingFeedback && (
+                <div className="flex items-center text-blue-600">
+                  <Brain className="w-4 h-4 mr-2 animate-pulse" />
+                  <span className="text-sm">Analyzing...</span>
+                </div>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {sessionType === 'voice' ? (
               <VoiceRecorder 
                 onAudioReady={handleVoiceResponse}
+                onTranscriptReady={handleTranscriptReady}
                 isRecording={isRecording}
                 setIsRecording={setIsRecording}
               />
@@ -230,7 +330,7 @@ const InterviewSession = ({ sessionId, sessionType, onEndSession }: InterviewSes
                 </Button>
                 <Button 
                   onClick={saveResponse}
-                  disabled={!response.trim()}
+                  disabled={!response.trim() || isGeneratingFeedback}
                   className="bg-accent hover:bg-accent/90"
                 >
                   {sessionType === 'voice' ? (

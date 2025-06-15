@@ -1,15 +1,18 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Play, Square } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 interface VoiceRecorderProps {
   onAudioReady: (audioBlob: Blob) => void;
+  onTranscriptReady: (transcript: string) => void;
   isRecording: boolean;
   setIsRecording: (recording: boolean) => void;
 }
 
-const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecorderProps) => {
+const VoiceRecorder = ({ onAudioReady, onTranscriptReady, isRecording, setIsRecording }: VoiceRecorderProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState<Blob | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -17,8 +20,20 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
   const chunksRef = useRef<Blob[]>([]);
   const { toast } = useToast();
 
+  const {
+    transcript,
+    isListening,
+    startListening,
+    stopListening,
+    resetTranscript,
+    isSupported
+  } = useSpeechRecognition();
+
   const startRecording = async () => {
     try {
+      resetTranscript();
+      
+      // Start audio recording
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           sampleRate: 44100,
@@ -51,6 +66,11 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
       mediaRecorder.start();
       setIsRecording(true);
       
+      // Start speech recognition if supported
+      if (isSupported) {
+        startListening();
+      }
+      
       toast({
         title: "Recording Started",
         description: "Speak clearly into your microphone",
@@ -69,6 +89,16 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      
+      // Stop speech recognition
+      if (isListening) {
+        stopListening();
+      }
+      
+      // Send transcript if available
+      if (transcript.trim()) {
+        onTranscriptReady(transcript);
+      }
       
       toast({
         title: "Recording Stopped",
@@ -150,6 +180,12 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
           <p className="text-sm text-medium-gray mt-2">
             Speak clearly and take your time to answer the question
           </p>
+          {transcript && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">Live Transcript:</p>
+              <p className="text-sm">{transcript}</p>
+            </div>
+          )}
         </div>
       )}
       
@@ -159,6 +195,12 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
           <p className="text-sm text-medium-gray">
             You can play it back to review or submit your response
           </p>
+          {transcript && (
+            <div className="mt-3 p-3 bg-green-50 rounded-lg">
+              <p className="text-sm text-green-600 font-medium">Transcription:</p>
+              <p className="text-sm text-gray-700">{transcript}</p>
+            </div>
+          )}
         </div>
       )}
     </div>
