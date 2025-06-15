@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Play, ChartBar, Gear } from 'lucide-react';
+import { Play, ChartBar, Settings } from 'lucide-react';
 
 const FeatureSection = () => {
   const features = [
@@ -18,7 +17,7 @@ const FeatureSection = () => {
       stats: "Real-time Feedback"
     },
     {
-      icon: Gear,
+      icon: Settings,
       title: "Personalized Coaching",
       description: "Receive customized coaching based on your performance. Our AI adapts to your learning style and provides targeted recommendations.",
       stats: "95% Success Rate"

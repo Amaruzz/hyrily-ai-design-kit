@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Home, Play, ChartBar, Gear } from 'lucide-react';
+import { Home, Play, ChartBar, Settings } from 'lucide-react';
 
 const DashboardPreview = () => {
   return (
@@ -43,7 +43,7 @@ const DashboardPreview = () => {
                     { icon: Home, label: 'Dashboard', active: true },
                     { icon: Play, label: 'Practice Sessions', active: false },
                     { icon: ChartBar, label: 'Analytics', active: false },
-                    { icon: Gear, label: 'Settings', active: false },
+                    { icon: Settings, label: 'Settings', active: false },
                   ].map((item, index) => (
                     <div
                       key={index}
