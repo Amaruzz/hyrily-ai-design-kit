@@ -21,6 +21,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isInitialized = useRef(false);
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isSupported = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
 
@@ -36,65 +37,111 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      console.log('Speech recognition started');
+      console.log('Speech recognition started - Hyrily is listening');
       setIsListening(true);
       setError(null);
     };
 
     recognition.onresult = (event) => {
-      let interimTranscriptText = '';
-      let finalTranscriptText = '';
+      let interimText = '';
+      let finalText = '';
       
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
+      // Process all results
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcriptText = result[0].transcript;
         
-        if (event.results[i].isFinal) {
-          finalTranscriptText += transcript + ' ';
+        if (result.isFinal) {
+          finalText += transcriptText + ' ';
         } else {
-          interimTranscriptText += transcript;
+          interimText += transcriptText;
         }
       }
       
-      setInterimTranscript(interimTranscriptText);
+      // Update interim transcript immediately for real-time display
+      setInterimTranscript(interimText);
       
-      if (finalTranscriptText) {
-        setFinalTranscript(prev => prev + finalTranscriptText);
-        setTranscript(prev => prev + finalTranscriptText);
+      // Update final transcript when speech segments are complete
+      if (finalText) {
+        setFinalTranscript(prev => prev + finalText);
+        console.log('New final transcript:', finalText);
       }
       
-      // Update combined transcript for real-time display
-      const combinedTranscript = finalTranscript + finalTranscriptText + interimTranscriptText;
+      // Combine final and interim for complete real-time display
+      const combinedTranscript = finalTranscript + finalText + interimText;
       setTranscript(combinedTranscript);
     };
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      setError(`Speech recognition error: ${event.error}`);
-      setIsListening(false);
       
-      // Auto-restart on certain errors
-      if (event.error === 'aborted' || event.error === 'network') {
-        setTimeout(() => {
-          if (recognitionRef.current && !isListening) {
-            startListening();
-          }
-        }, 1000);
+      if (event.error === 'no-speech') {
+        console.log('No speech detected, continuing to listen...');
+        return; // Don't treat as fatal error
+      }
+      
+      if (event.error === 'audio-capture') {
+        setError('Microphone access denied or not available');
+        setIsListening(false);
+        return;
+      }
+      
+      if (event.error === 'not-allowed') {
+        setError('Microphone permission denied');
+        setIsListening(false);
+        return;
+      }
+      
+      // For network errors or aborted, try to restart automatically
+      if (event.error === 'network' || event.error === 'aborted') {
+        console.log('Network/abort error, will restart listening...');
+        if (isListening) {
+          restartTimeoutRef.current = setTimeout(() => {
+            if (recognitionRef.current && isListening) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.log('Failed to restart recognition:', e);
+              }
+            }
+          }, 1000);
+        }
+      } else {
+        setError(`Speech recognition error: ${event.error}`);
+        setIsListening(false);
       }
     };
 
     recognition.onend = () => {
       console.log('Speech recognition ended');
       setIsListening(false);
+      
+      // Auto-restart if we were supposed to be listening
+      if (isListening && !error) {
+        console.log('Auto-restarting speech recognition...');
+        restartTimeoutRef.current = setTimeout(() => {
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (e) {
+              console.log('Failed to restart recognition:', e);
+            }
+          }
+        }, 500);
+      }
     };
 
     recognitionRef.current = recognition;
     isInitialized.current = true;
-  }, [isSupported, isListening, finalTranscript]);
+  }, [isSupported, isListening, finalTranscript, error]);
 
   useEffect(() => {
     initializeRecognition();
     
     return () => {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
@@ -108,6 +155,7 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     
     try {
       setError(null);
+      console.log('Starting continuous speech recognition for Hyrily...');
       recognitionRef.current.start();
     } catch (error) {
       console.error('Error starting speech recognition:', error);
@@ -116,16 +164,22 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   }, [isListening]);
 
   const stopListening = useCallback(() => {
-    if (!recognitionRef.current || !isListening) return;
+    if (!recognitionRef.current) return;
     
     try {
+      console.log('Stopping speech recognition...');
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
       recognitionRef.current.stop();
     } catch (error) {
       console.error('Error stopping speech recognition:', error);
     }
-  }, [isListening]);
+  }, []);
 
   const resetTranscript = useCallback(() => {
+    console.log('Resetting transcript...');
     setTranscript('');
     setInterimTranscript('');
     setFinalTranscript('');

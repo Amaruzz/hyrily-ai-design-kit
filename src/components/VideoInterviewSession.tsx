@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,7 +38,10 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [showFeedbackReport, setShowFeedbackReport] = useState(false);
-  
+  const [isListeningContinuously, setIsListeningContinuously] = useState(false);
+  const speechProcessingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastFinalTranscriptRef = useRef('');
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -67,6 +69,39 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       });
     }
   }, [speechError, toast]);
+
+  // Enhanced speech processing with real-time updates
+  useEffect(() => {
+    if (isListeningContinuously && finalTranscript && finalTranscript !== lastFinalTranscriptRef.current) {
+      console.log('Real-time transcript update for Hyrily:', finalTranscript);
+      lastFinalTranscriptRef.current = finalTranscript;
+      
+      // Clear any existing timeout
+      if (speechProcessingTimeoutRef.current) {
+        clearTimeout(speechProcessingTimeoutRef.current);
+      }
+      
+      // Set a short delay to process complete thoughts
+      speechProcessingTimeoutRef.current = setTimeout(() => {
+        if (finalTranscript.trim().length > 10) { // Process when we have substantial content
+          console.log('Processing substantial speech input for Hyrily...');
+          handleSpeechInput(finalTranscript.trim());
+        }
+      }, 2000); // 2 second delay to catch complete thoughts
+    }
+  }, [finalTranscript, isListeningContinuously]);
+
+  const handleSpeechInput = async (speechText: string) => {
+    if (!speechText || speechText.length < 5) return;
+    
+    console.log('Hyrily processing speech input:', speechText);
+    toast({
+      title: "Hyrily Processing...",
+      description: "Analyzing your response in real-time...",
+    });
+    
+    await submitResponse(speechText);
+  };
 
   // 2-minute session timer
   useEffect(() => {
@@ -397,11 +432,62 @@ Generate only the question text, nothing else.`,
     }, 2500);
   };
 
+  const startContinuousListening = () => {
+    if (!isSupported) {
+      toast({
+        title: "Speech Recognition Not Supported",
+        description: "Your browser doesn't support speech recognition. Please use Chrome or Edge.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!isMicOn) {
+      toast({
+        title: "Microphone Required",
+        description: "Please enable your microphone first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log('Starting continuous listening for Hyrily...');
+    resetTranscript();
+    setIsListeningContinuously(true);
+    setIsRecording(false);
+    setIsProcessingAudio(false);
+    startListening();
+    
+    toast({
+      title: "Hyrily is Listening",
+      description: "Speak naturally - Hyrily will process your responses in real-time.",
+    });
+  };
+
+  const stopContinuousListening = () => {
+    console.log('Stopping continuous listening...');
+    setIsListeningContinuously(false);
+    stopListening();
+    
+    if (speechProcessingTimeoutRef.current) {
+      clearTimeout(speechProcessingTimeoutRef.current);
+    }
+    
+    toast({
+      title: "Listening Stopped",
+      description: "Hyrily has stopped real-time listening.",
+    });
+  };
+
   const startInterview = async () => {
     await startCamera();
     setInterviewStarted(true);
     setTimeout(() => {
       speakQuestion(interviewQuestions[0].question);
+      // Auto-start continuous listening after AI speaks
+      setTimeout(() => {
+        startContinuousListening();
+      }, 2000);
     }, 1000);
   };
 
@@ -437,9 +523,15 @@ Generate only the question text, nothing else.`,
   };
 
   // Get current transcript to display
-  const currentTranscript = isRecording 
-    ? (interimTranscript || transcript || 'Listening...') 
-    : (finalTranscript || transcript);
+  const displayTranscript = () => {
+    if (isListeningContinuously || isListening) {
+      if (interimTranscript) {
+        return finalTranscript + ' ' + interimTranscript;
+      }
+      return finalTranscript || transcript || 'Listening for your voice...';
+    }
+    return finalTranscript || transcript || '';
+  };
 
   if (!interviewStarted) {
     return (
@@ -523,7 +615,7 @@ Generate only the question text, nothing else.`,
               </span>
             </div>
 
-            {/* Status */}
+            {/* Enhanced Status */}
             <div className="flex items-center justify-center space-x-2">
               <div className="flex items-center space-x-2">
                 {isAISpeaking ? (
@@ -531,25 +623,30 @@ Generate only the question text, nothing else.`,
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Hyrily is Speaking</span>
                   </>
+                ) : isListeningContinuously ? (
+                  <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Hyrily is listening continuously...</span>
+                  </>
                 ) : isRecording ? (
                   <>
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                    <span className="text-gray-600">Recording your technical response...</span>
+                    <span className="text-gray-600">Recording specific response...</span>
                   </>
                 ) : isListening ? (
                   <>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-gray-600">Listening for speech...</span>
+                    <span className="text-gray-600">Processing speech...</span>
                   </>
                 ) : isWaitingForResponse ? (
                   <>
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-gray-600">Your turn to respond</span>
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Ready for your response</span>
                   </>
                 ) : isProcessingAudio ? (
                   <>
-                    <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-                    <span className="text-gray-600">Processing your response...</span>
+                    <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Analyzing your response...</span>
                   </>
                 ) : (
                   <>
@@ -609,39 +706,45 @@ Generate only the question text, nothing else.`,
               </div>
             )}
 
-            {/* Live transcript overlay */}
-            {(isRecording || isListening) && currentTranscript && (
-              <div className="absolute bottom-20 left-4 right-4 bg-black/80 rounded-lg p-4">
-                <p className="text-sm text-white">
-                  <span className="text-green-400 font-semibold">
-                    {isRecording ? 'Live transcript:' : 'Processing:'}
-                  </span> {currentTranscript}
+            {/* Enhanced live transcript overlay */}
+            {(isListeningContinuously || isRecording || isListening) && (
+              <div className="absolute bottom-20 left-4 right-4 bg-black/90 rounded-lg p-4 max-h-32 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-green-400 font-semibold text-sm">
+                    {isListeningContinuously ? '🎤 Live Transcript (Hyrily is listening):' 
+                     : isRecording ? '🔴 Recording Transcript:' 
+                     : '🔄 Processing...'}
+                  </span>
+                  {isListeningContinuously && (
+                    <span className="text-xs text-gray-400">Real-time mode</span>
+                  )}
+                </div>
+                <p className="text-white text-sm leading-relaxed">
+                  {displayTranscript() || "Speak clearly into your microphone..."}
                 </p>
                 {interimTranscript && (
-                  <p className="text-xs text-gray-300 mt-1">
-                    <span className="text-yellow-400">Interim:</span> {interimTranscript}
+                  <p className="text-yellow-300 text-xs mt-1 italic">
+                    Interim: {interimTranscript}
                   </p>
                 )}
               </div>
             )}
 
-            {/* Recording indicator */}
+            {/* Enhanced status indicators */}
+            {isListeningContinuously && (
+              <div className="absolute top-4 left-4 bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
+                🎤 HYRILY LISTENING
+              </div>
+            )}
+
             {isRecording && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
                 🔴 RECORDING
               </div>
             )}
 
-            {/* Listening indicator */}
-            {isListening && !isRecording && (
-              <div className="absolute top-4 left-4 bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
-                🎤 LISTENING
-              </div>
-            )}
-
-            {/* Processing indicator */}
-            {isProcessingAudio && !isRecording && (
-              <div className="absolute top-4 left-4 bg-yellow-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+            {isProcessingAudio && (
+              <div className="absolute top-4 left-4 bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-medium">
                 🔄 PROCESSING...
               </div>
             )}
@@ -665,20 +768,38 @@ Generate only the question text, nothing else.`,
               {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
             </Button>
 
-            {/* Record Button */}
-            <Button
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={!isWaitingForResponse || isAISpeaking || !isMicOn || isProcessingAudio}
-              className={`rounded-full px-6 py-3 ${
-                isRecording 
-                  ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
-                  : 'bg-green-500 hover:bg-green-600'
-              }`}
-              size="lg"
-            >
-              {isRecording ? 'Stop Recording' : 'Start Recording'}
-            </Button>
+            {/* Enhanced Recording Controls */}
+            <div className="flex items-center space-x-2">
+              {/* Continuous Listen Button */}
+              <Button
+                onClick={isListeningContinuously ? stopContinuousListening : startContinuousListening}
+                disabled={isAISpeaking || !isMicOn || isRecording}
+                className={`rounded-full px-4 py-2 ${
+                  isListeningContinuously 
+                    ? 'bg-green-600 hover:bg-green-700 animate-pulse' 
+                    : 'bg-blue-500 hover:bg-blue-600'
+                }`}
+                size="sm"
+              >
+                {isListeningContinuously ? 'Stop Listening' : 'Start Listening'}
+              </Button>
 
+              {/* Record Button */}
+              <Button
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={!isWaitingForResponse || isAISpeaking || !isMicOn || isProcessingAudio}
+                className={`rounded-full px-6 py-3 ${
+                  isRecording 
+                    ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
+                    : 'bg-orange-500 hover:bg-orange-600'
+                }`}
+                size="lg"
+              >
+                {isRecording ? 'Stop Recording' : 'Record Answer'}
+              </Button>
+            </div>
+
+            {/* Camera Button */}
             <Button
               variant="outline"
               size="lg"
