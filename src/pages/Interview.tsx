@@ -2,21 +2,20 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Mic, MessageSquare, Video } from 'lucide-react';
+import { Video, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import VoiceInterviewSession from '@/components/VoiceInterviewSession';
-import ChatInterviewSession from '@/components/ChatInterviewSession';
 import VideoInterviewSession from '@/components/VideoInterviewSession';
+import ChatInterviewSession from '@/components/ChatInterviewSession';
 import AuthWrapper from '@/components/AuthWrapper';
 
 const Interview = () => {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionType, setSessionType] = useState<'voice' | 'text' | 'video'>('voice');
+  const [sessionType, setSessionType] = useState<'text' | 'video'>('video');
   const { toast } = useToast();
 
-  const startSession = async (type: 'voice' | 'text' | 'video') => {
+  const startSession = async (type: 'text' | 'video') => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -94,13 +93,8 @@ const Interview = () => {
             sessionId={sessionId}
             onEndSession={endSession}
           />
-        ) : sessionType === 'video' ? (
-          <VideoInterviewSession 
-            sessionId={sessionId}
-            onEndSession={endSession}
-          />
         ) : (
-          <VoiceInterviewSession 
+          <VideoInterviewSession 
             sessionId={sessionId}
             onEndSession={endSession}
           />
@@ -112,7 +106,7 @@ const Interview = () => {
   return (
     <AuthWrapper>
       <div className="min-h-screen bg-off-white py-8">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="max-w-4xl mx-auto px-4">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-primary mb-4">
               AI Interview Practice
@@ -122,14 +116,14 @@ const Interview = () => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 gap-8">
             {/* Video Interview */}
             <Card className="hover:shadow-lg transition-shadow cursor-pointer">
               <CardHeader className="text-center">
-                <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Video className="w-8 h-8 text-purple-500" />
+                <div className="w-20 h-20 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Video className="w-10 h-10 text-purple-500" />
                 </div>
-                <CardTitle className="text-xl">Video Interview</CardTitle>
+                <CardTitle className="text-2xl">Video Interview</CardTitle>
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
@@ -139,42 +133,16 @@ const Interview = () => {
                   <div>✓ Live video with AI interviewer</div>
                   <div>✓ Camera and microphone enabled</div>
                   <div>✓ Real-time speech interaction</div>
-                  <div>✓ 60 seconds per question</div>
+                  <div>✓ Adaptive question progression</div>
+                  <div>✓ 60-minute session duration</div>
                   <div>✓ Professional interview simulation</div>
                 </div>
                 <Button 
                   onClick={() => startSession('video')}
                   className="w-full bg-purple-500 hover:bg-purple-600"
+                  size="lg"
                 >
                   Start Video Interview
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Voice Interview */}
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardHeader className="text-center">
-                <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mic className="w-8 h-8 text-accent" />
-                </div>
-                <CardTitle className="text-xl">Voice Interview</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center space-y-4">
-                <p className="text-medium-gray">
-                  Experience a fully interactive voice interview. AI speaks questions aloud, you record your responses, and get real-time scoring.
-                </p>
-                <div className="space-y-2 text-sm text-medium-gray">
-                  <div>✓ AI speaks questions verbally</div>
-                  <div>✓ Voice-to-text response recording</div>
-                  <div>✓ 60 seconds per question</div>
-                  <div>✓ 10 diverse interview questions</div>
-                  <div>✓ Auto-skip if time expires</div>
-                </div>
-                <Button 
-                  onClick={() => startSession('voice')}
-                  className="w-full bg-accent hover:bg-accent/90"
-                >
-                  Start Voice Interview
                 </Button>
               </CardContent>
             </Card>
@@ -182,10 +150,10 @@ const Interview = () => {
             {/* Text Interview */}
             <Card className="hover:shadow-lg transition-shadow cursor-pointer">
               <CardHeader className="text-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="w-8 h-8 text-primary" />
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <MessageSquare className="w-10 h-10 text-primary" />
                 </div>
-                <CardTitle className="text-xl">Text Interview</CardTitle>
+                <CardTitle className="text-2xl">Text Interview</CardTitle>
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
@@ -197,10 +165,12 @@ const Interview = () => {
                   <div>✓ Live scoring (out of 5)</div>
                   <div>✓ Instant feedback</div>
                   <div>✓ Varied question progression</div>
+                  <div>✓ Self-paced interaction</div>
                 </div>
                 <Button 
                   onClick={() => startSession('text')}
                   className="w-full bg-primary hover:bg-primary/90"
+                  size="lg"
                 >
                   Start Text Interview
                 </Button>

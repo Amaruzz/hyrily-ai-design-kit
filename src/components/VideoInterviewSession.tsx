@@ -19,7 +19,7 @@ interface InterviewQuestion {
   category: string;
 }
 
-const interviewQuestions: InterviewQuestion[] = [
+const baseQuestions: InterviewQuestion[] = [
   { id: 1, question: "Hello! Welcome to your interview session with Hyrily. I'm your AI interviewer. Let's start with: Can you tell me about yourself and your background?", category: "Introduction" },
   { id: 2, question: "What interests you about this role and what makes you a good fit for our company?", category: "Motivation" },
   { id: 3, question: "Describe a challenging project you worked on and how you overcame the obstacles.", category: "Problem Solving" },
@@ -38,15 +38,14 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [isQuestionActive, setIsQuestionActive] = useState(false);
   const [interviewStarted, setInterviewStarted] = useState(false);
-  const [responses, setResponses] = useState<Record<number, { text: string; score: number; status: 'answered' | 'skipped' }>>({});
+  const [responses, setResponses] = useState<Record<number, { text: string; score: number }>>({});
   const [sessionTime, setSessionTime] = useState(0);
+  const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(baseQuestions);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
@@ -59,11 +58,24 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     isSupported
   } = useSpeechRecognition();
 
-  // Session timer
+  // 60-minute session timer
   useEffect(() => {
     if (interviewStarted) {
       sessionTimerRef.current = setInterval(() => {
-        setSessionTime(prev => prev + 1);
+        setSessionTime(prev => {
+          const newTime = prev + 1;
+          // Auto-end after 60 minutes (3600 seconds)
+          if (newTime >= 3600) {
+            toast({
+              title: "Time's Up!",
+              description: "Your 60-minute interview session has ended.",
+            });
+            setTimeout(() => {
+              onEndSession();
+            }, 3000);
+          }
+          return newTime;
+        });
       }, 1000);
     }
 
@@ -72,24 +84,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         clearInterval(sessionTimerRef.current);
       }
     };
-  }, [interviewStarted]);
-
-  // Question timer
-  useEffect(() => {
-    if (isQuestionActive && timeLeft > 0) {
-      timerRef.current = setTimeout(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0 && isQuestionActive) {
-      handleSkipQuestion();
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [timeLeft, isQuestionActive]);
+  }, [interviewStarted, onEndSession]);
 
   // Start camera
   const startCamera = async () => {
@@ -137,6 +132,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
 
   const speakQuestion = async (questionText: string) => {
     setIsAISpeaking(true);
+    setIsWaitingForResponse(false);
     
     try {
       if ('speechSynthesis' in window) {
@@ -147,21 +143,18 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         
         utterance.onend = () => {
           setIsAISpeaking(false);
-          setIsQuestionActive(true);
-          setTimeLeft(60);
+          setIsWaitingForResponse(true);
         };
 
         speechSynthesis.speak(utterance);
       } else {
         setIsAISpeaking(false);
-        setIsQuestionActive(true);
-        setTimeLeft(60);
+        setIsWaitingForResponse(true);
       }
     } catch (error) {
       console.error('Error speaking question:', error);
       setIsAISpeaking(false);
-      setIsQuestionActive(true);
-      setTimeLeft(60);
+      setIsWaitingForResponse(true);
     }
   };
 
@@ -208,19 +201,34 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     }
   };
 
+  const generateNextQuestion = async (previousResponse: string): Promise<string> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('gemini-chat', {
+        body: {
+          prompt: `Based on the candidate's response: "${previousResponse}", generate the next appropriate interview question. Make it relevant to their answer and different from previous questions. Keep it professional and interview-appropriate.`,
+          type: 'question'
+        }
+      });
+
+      if (error) throw error;
+
+      return data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses.";
+    } catch (error) {
+      console.error('Error generating next question:', error);
+      return interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses.";
+    }
+  };
+
   const submitResponse = async (responseText: string) => {
     const currentQuestion = interviewQuestions[currentQuestionIndex];
     const score = await generateScore(currentQuestion.question, responseText);
     
-    const newResponse = {
-      text: responseText,
-      score,
-      status: 'answered' as const
-    };
-
     setResponses(prev => ({
       ...prev,
-      [currentQuestion.id]: newResponse
+      [currentQuestion.id]: {
+        text: responseText,
+        score
+      }
     }));
 
     toast({
@@ -228,42 +236,42 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       description: `Score: ${score}/5`,
     });
 
-    setTimeout(() => {
-      moveToNextQuestion();
-    }, 2000);
-  };
+    setIsWaitingForResponse(false);
 
-  const handleSkipQuestion = () => {
-    const currentQuestion = interviewQuestions[currentQuestionIndex];
-    
-    setResponses(prev => ({
-      ...prev,
-      [currentQuestion.id]: {
-        text: 'Not attended - Time expired',
-        score: 0,
-        status: 'skipped'
+    // Generate next question based on response
+    setTimeout(async () => {
+      if (currentQuestionIndex < 9) { // Limit to 10 questions
+        const nextQuestion = await generateNextQuestion(responseText);
+        
+        // Add the new question to our list
+        const newQuestion: InterviewQuestion = {
+          id: currentQuestionIndex + 2,
+          question: nextQuestion,
+          category: "Follow-up"
+        };
+
+        setInterviewQuestions(prev => {
+          const updated = [...prev];
+          if (updated[currentQuestionIndex + 1]) {
+            updated[currentQuestionIndex + 1] = newQuestion;
+          } else {
+            updated.push(newQuestion);
+          }
+          return updated;
+        });
+
+        setCurrentQuestionIndex(prev => prev + 1);
+        resetTranscript();
+      } else {
+        toast({
+          title: "Interview Complete!",
+          description: "Thank you for completing the interview.",
+        });
+        setTimeout(() => {
+          onEndSession();
+        }, 3000);
       }
-    }));
-
-    moveToNextQuestion();
-  };
-
-  const moveToNextQuestion = () => {
-    setIsQuestionActive(false);
-    setTimeLeft(60);
-    resetTranscript();
-    
-    if (currentQuestionIndex < interviewQuestions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-    } else {
-      toast({
-        title: "Interview Complete!",
-        description: "Thank you for completing all questions.",
-      });
-      setTimeout(() => {
-        onEndSession();
-      }, 3000);
-    }
+    }, 2500); // 2.5 second delay as requested
   };
 
   const startInterview = async () => {
@@ -275,7 +283,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   };
 
   useEffect(() => {
-    if (interviewStarted && currentQuestionIndex > 0) {
+    if (interviewStarted && currentQuestionIndex > 0 && currentQuestionIndex < interviewQuestions.length) {
       setTimeout(() => {
         speakQuestion(interviewQuestions[currentQuestionIndex].question);
       }, 1000);
@@ -283,10 +291,17 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   }, [currentQuestionIndex, interviewStarted]);
 
   const currentQuestion = interviewQuestions[currentQuestionIndex];
-  const answeredCount = Object.values(responses).filter(r => r.status === 'answered').length;
+  const answeredCount = Object.keys(responses).length;
   const averageScore = answeredCount > 0 
-    ? Object.values(responses).filter(r => r.status === 'answered').reduce((sum, r) => sum + r.score, 0) / answeredCount 
+    ? Object.values(responses).reduce((sum, r) => sum + r.score, 0) / answeredCount 
     : 0;
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   if (!interviewStarted) {
     return (
@@ -302,9 +317,9 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             </div>
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
-              <p>• 10 questions, 60 seconds each</p>
+              <p>• Adaptive question progression</p>
               <p>• Real-time speech recognition</p>
-              <p>• Instant scoring and feedback</p>
+              <p>• 60-minute session duration</p>
             </div>
             <Button 
               onClick={startInterview}
@@ -361,19 +376,12 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
               </p>
             </div>
 
-            {/* Timer */}
+            {/* Session Timer */}
             <div className="flex items-center justify-center space-x-2">
-              <div className="w-16 h-16 rounded-full border-4 border-red-200 flex items-center justify-center relative">
-                <div 
-                  className="absolute inset-0 rounded-full border-4 border-red-500"
-                  style={{
-                    clipPath: `polygon(50% 50%, 50% 0%, ${50 + (timeLeft / 60) * 50}% 0%, ${50 + (timeLeft / 60) * 50}% 100%, 50% 100%)`
-                  }}
-                />
-                <span className="text-lg font-bold text-gray-800">
-                  {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
-                </span>
-              </div>
+              <Clock className="w-5 h-5 text-gray-600" />
+              <span className="text-lg font-bold text-gray-800">
+                {formatTime(sessionTime)} / 60:00
+              </span>
             </div>
 
             {/* Status */}
@@ -384,7 +392,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Hyrily is Speaking</span>
                   </>
-                ) : isQuestionActive ? (
+                ) : isWaitingForResponse ? (
                   <>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Your turn to respond</span>
@@ -408,16 +416,14 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
               <div className="text-center">
                 <div className="text-2xl font-bold">{Math.floor(sessionTime / 60)}</div>
                 <div className="text-xs text-gray-400">MINUTES</div>
-                <div className="text-xs text-gray-400">Duration</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold">{answeredCount}</div>
-                <div className="text-xs text-gray-400">AVERAGE</div>
-                <div className="text-xs text-gray-400">Questions</div>
+                <div className="text-xs text-gray-400">ANSWERED</div>
               </div>
               <div className="text-center">
-                <div className="text-xs text-gray-400">COGNITIVE</div>
-                <div className="text-xs text-gray-400">LEVEL</div>
+                <div className="text-2xl font-bold">{averageScore.toFixed(1)}</div>
+                <div className="text-xs text-gray-400">AVG SCORE</div>
               </div>
               <div className="text-center">
                 <div className="text-xs text-gray-400">COMPANY</div>
@@ -425,7 +431,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
               </div>
             </div>
             <Button variant="outline" onClick={onEndSession} className="border-white/20 text-white">
-              End Call
+              End Interview
             </Button>
           </div>
 
@@ -471,7 +477,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             {/* Record Button */}
             <Button
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={!isQuestionActive || isAISpeaking}
+              disabled={!isWaitingForResponse || isAISpeaking}
               className={`rounded-full w-16 h-16 ${
                 isRecording 
                   ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
@@ -489,14 +495,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
               className={`rounded-full w-12 h-12 ${isCameraOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
             >
               {isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-            </Button>
-
-            <Button
-              variant="outline"
-              size="lg"
-              className="rounded-full w-12 h-12 bg-gray-600 text-white"
-            >
-              <MessageSquare className="w-5 h-5" />
             </Button>
           </div>
         </div>
