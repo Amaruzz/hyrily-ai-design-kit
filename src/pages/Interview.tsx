@@ -2,9 +2,10 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Video, MessageSquare } from 'lucide-react';
+import { Video, MessageSquare, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { useNavigate } from 'react-router-dom';
 import VideoInterviewSession from '@/components/VideoInterviewSession';
 import ChatInterviewSession from '@/components/ChatInterviewSession';
 import AuthWrapper from '@/components/AuthWrapper';
@@ -14,6 +15,7 @@ const Interview = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionType, setSessionType] = useState<'text' | 'video'>('video');
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const startSession = async (type: 'text' | 'video') => {
     try {
@@ -107,6 +109,18 @@ const Interview = () => {
     <AuthWrapper>
       <div className="min-h-screen bg-off-white py-8">
         <div className="max-w-4xl mx-auto px-4">
+          {/* Back Button */}
+          <div className="mb-6">
+            <Button
+              variant="ghost"
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-2 text-primary hover:text-primary/80"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Home</span>
+            </Button>
+          </div>
+
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-primary mb-4">
               AI Interview Practice
@@ -134,7 +148,7 @@ const Interview = () => {
                   <div>✓ Camera and microphone enabled</div>
                   <div>✓ Real-time speech interaction</div>
                   <div>✓ Adaptive question progression</div>
-                  <div>✓ 60-minute session duration</div>
+                  <div>✓ 2-minute session duration</div>
                   <div>✓ Professional interview simulation</div>
                 </div>
                 <Button 

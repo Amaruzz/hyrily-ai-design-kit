@@ -3,10 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Mic, MicOff, Video, VideoOff, Phone, Clock } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import InterviewFeedbackReport from './InterviewFeedbackReport';
 
 interface VideoInterviewSessionProps {
   sessionId: string;
@@ -23,13 +24,6 @@ const baseQuestions: InterviewQuestion[] = [
   { id: 1, question: "Hello! Welcome to your interview session with Hyrily. I'm your AI interviewer. Let's start with: Can you tell me about yourself and your background?", category: "Introduction" },
   { id: 2, question: "What interests you about this role and what makes you a good fit for our company?", category: "Motivation" },
   { id: 3, question: "Describe a challenging project you worked on and how you overcame the obstacles.", category: "Problem Solving" },
-  { id: 4, question: "How do you handle working under pressure and tight deadlines?", category: "Stress Management" },
-  { id: 5, question: "Tell me about a time when you had to work with a difficult team member.", category: "Teamwork" },
-  { id: 6, question: "What are your greatest strengths and how do they apply to this position?", category: "Strengths" },
-  { id: 7, question: "Describe a situation where you had to learn something new quickly.", category: "Adaptability" },
-  { id: 8, question: "How do you prioritize tasks when you have multiple competing deadlines?", category: "Time Management" },
-  { id: 9, question: "Tell me about a mistake you made and how you handled it.", category: "Self-Awareness" },
-  { id: 10, question: "Where do you see yourself in the next five years?", category: "Career Goals" }
 ];
 
 const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessionProps) => {
@@ -46,6 +40,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [realTimeTranscript, setRealTimeTranscript] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [showFeedbackReport, setShowFeedbackReport] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -71,20 +66,20 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     }
   }, [transcript, isRecording]);
 
-  // 60-minute session timer
+  // 2-minute session timer
   useEffect(() => {
     if (interviewStarted) {
       sessionTimerRef.current = setInterval(() => {
         setSessionTime(prev => {
           const newTime = prev + 1;
-          if (newTime >= 3600) { // 60 minutes
+          if (newTime >= 120) { // 2 minutes
             toast({
               title: "Time's Up!",
-              description: "Your 60-minute interview session has ended.",
+              description: "Your 2-minute interview session has ended. Generating feedback report...",
             });
             setTimeout(() => {
-              onEndSession();
-            }, 3000);
+              endInterviewAndShowReport();
+            }, 2000);
           }
           return newTime;
         });
@@ -96,7 +91,29 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         clearInterval(sessionTimerRef.current);
       }
     };
-  }, [interviewStarted, onEndSession, toast]);
+  }, [interviewStarted]);
+
+  const endInterviewAndShowReport = async () => {
+    if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current);
+    }
+    
+    // Stop camera and mic
+    stopCamera();
+    
+    // Update session in database
+    await supabase
+      .from('user_sessions')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        responses: responses,
+        duration_minutes: Math.floor(sessionTime / 60)
+      })
+      .eq('id', sessionId);
+
+    setShowFeedbackReport(true);
+  };
 
   // Audio level monitoring
   const updateAudioLevel = () => {
@@ -104,7 +121,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       analyserRef.current.getByteFrequencyData(dataArray);
       
-      // Calculate average audio level
       const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
       const normalizedLevel = Math.min(100, (average / 128) * 100);
       setAudioLevel(normalizedLevel);
@@ -157,7 +173,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       
       toast({
         title: "Camera & Microphone Started",
-        description: "Your camera and microphone are now active. You can see the audio levels next to the mic button.",
+        description: "Your camera and microphone are now active.",
       });
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -199,7 +215,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     
     try {
       if ('speechSynthesis' in window) {
-        // Stop any ongoing speech
         speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(questionText);
@@ -210,16 +225,13 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         utterance.onend = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
-          console.log('Hyrily finished speaking, waiting for candidate response');
         };
 
         utterance.onerror = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
-          console.log('Speech synthesis error, moving to response phase');
         };
 
-        console.log('Hyrily is speaking:', questionText);
         speechSynthesis.speak(utterance);
       } else {
         setIsAISpeaking(false);
@@ -251,7 +263,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       return;
     }
 
-    console.log('Starting voice recording...');
     resetTranscript();
     setRealTimeTranscript('');
     setIsRecording(true);
@@ -265,15 +276,12 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   };
 
   const stopRecording = async () => {
-    console.log('Stopping voice recording...');
     setIsRecording(false);
     setIsProcessingAudio(false);
     stopListening();
     
-    // Give a small delay to ensure final transcript is captured
     setTimeout(async () => {
       const finalTranscript = transcript.trim();
-      console.log('Final transcript captured:', finalTranscript);
       
       if (finalTranscript) {
         await submitResponse(finalTranscript);
@@ -292,8 +300,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
 
   const generateScore = async (question: string, response: string): Promise<number> => {
     try {
-      console.log('Generating score for response:', response.substring(0, 100) + '...');
-      
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
           prompt: `As an AI interviewer, evaluate this candidate's response to the interview question. 
@@ -317,7 +323,6 @@ Return only the numerical score (e.g., "4.2")`,
 
       const scoreMatch = data?.content?.match(/(\d+(?:\.\d+)?)/);
       const score = scoreMatch ? Math.min(5, Math.max(1, parseFloat(scoreMatch[1]))) : 3;
-      console.log('Generated score:', score);
       return score;
     } catch (error) {
       console.error('Error generating score:', error);
@@ -327,8 +332,6 @@ Return only the numerical score (e.g., "4.2")`,
 
   const generateNextQuestion = async (previousResponse: string): Promise<string> => {
     try {
-      console.log('Generating next question based on response:', previousResponse.substring(0, 100) + '...');
-      
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
           prompt: `As Hyrily, an AI interviewer, analyze the candidate's response and generate an appropriate follow-up question.
@@ -341,26 +344,23 @@ Based on their answer, create a relevant follow-up question that:
 2. Explores their experience deeper
 3. Tests their problem-solving or interpersonal skills
 4. Remains professional and interview-appropriate
-5. Is different from questions already asked
 
-Generate only the question text, nothing else. Make it conversational and engaging.`,
+Generate only the question text, nothing else.`,
           type: 'question'
         }
       });
 
       if (error) throw error;
 
-      const nextQuestion = data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
-      console.log('Generated next question:', nextQuestion);
+      const nextQuestion = data?.content || "Thank you for your responses. That concludes our interview.";
       return nextQuestion;
     } catch (error) {
       console.error('Error generating next question:', error);
-      return interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
+      return "Thank you for your responses. That concludes our interview.";
     }
   };
 
   const submitResponse = async (responseText: string) => {
-    console.log('Processing candidate response:', responseText);
     setIsWaitingForResponse(false);
     
     const currentQuestion = interviewQuestions[currentQuestionIndex];
@@ -379,9 +379,9 @@ Generate only the question text, nothing else. Make it conversational and engagi
       description: `Score: ${score}/5 - Hyrily is preparing the next question...`,
     });
 
-    // Generate AI response based on candidate's answer after 2-3 seconds
+    // Generate AI response based on candidate's answer
     setTimeout(async () => {
-      if (currentQuestionIndex < 9) {
+      if (currentQuestionIndex < interviewQuestions.length - 1) {
         const nextQuestion = await generateNextQuestion(responseText);
         
         const newQuestion: InterviewQuestion = {
@@ -403,13 +403,7 @@ Generate only the question text, nothing else. Make it conversational and engagi
         setCurrentQuestionIndex(prev => prev + 1);
         resetTranscript();
       } else {
-        toast({
-          title: "Interview Complete!",
-          description: "Thank you for completing the interview with Hyrily.",
-        });
-        setTimeout(() => {
-          onEndSession();
-        }, 3000);
+        endInterviewAndShowReport();
       }
     }, 2500);
   };
@@ -442,6 +436,17 @@ Generate only the question text, nothing else. Make it conversational and engagi
     };
   }, []);
 
+  // Show feedback report
+  if (showFeedbackReport) {
+    return (
+      <InterviewFeedbackReport 
+        sessionId={sessionId}
+        responses={responses}
+        onBackToHome={onEndSession}
+      />
+    );
+  }
+
   const currentQuestion = interviewQuestions[currentQuestionIndex];
   const answeredCount = Object.keys(responses).length;
   const averageScore = answeredCount > 0 
@@ -449,10 +454,9 @@ Generate only the question text, nothing else. Make it conversational and engagi
     : 0;
 
   const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   if (!interviewStarted) {
@@ -465,14 +469,13 @@ Generate only the question text, nothing else. Make it conversational and engagi
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white mb-2">Video Interview</h2>
-              <p className="text-gray-300">Ready to start your live AI video interview with Hyrily?</p>
+              <p className="text-gray-300">Ready to start your 2-minute AI video interview with Hyrily?</p>
             </div>
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
               <p>• Voice recording with real-time feedback</p>
               <p>• Adaptive questions based on your responses</p>
-              <p>• 60-minute session duration</p>
-              <p>• Professional interview simulation</p>
+              <p>• 2-minute session with detailed feedback report</p>
             </div>
             <Button 
               onClick={startInterview}
@@ -533,7 +536,7 @@ Generate only the question text, nothing else. Make it conversational and engagi
             <div className="flex items-center justify-center space-x-2">
               <Clock className="w-5 h-5 text-gray-600" />
               <span className="text-lg font-bold text-gray-800">
-                {formatTime(sessionTime)} / 60:00
+                {formatTime(sessionTime)} / 02:00
               </span>
             </div>
 
@@ -588,12 +591,12 @@ Generate only the question text, nothing else. Make it conversational and engagi
                 <div className="text-2xl font-bold">{averageScore.toFixed(1)}</div>
                 <div className="text-xs text-gray-400">AVG SCORE</div>
               </div>
-              <div className="text-center">
-                <div className="text-xs text-gray-400">COMPANY</div>
-                <div className="text-xs text-gray-400">Hyrily</div>
-              </div>
             </div>
-            <Button variant="outline" onClick={onEndSession} className="border-white/20 text-white">
+            <Button 
+              variant="outline" 
+              onClick={endInterviewAndShowReport} 
+              className="border-white/20 text-white"
+            >
               End Interview
             </Button>
           </div>
