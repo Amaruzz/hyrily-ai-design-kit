@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Video, MessageSquare, ArrowLeft } from 'lucide-react';
+import { Video, MessageSquare, ArrowLeft, Code2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -50,8 +50,8 @@ const Interview = () => {
       setIsSessionActive(true);
       
       toast({
-        title: "Interview Started",
-        description: `Your ${type} interview session has begun!`,
+        title: "Frontend Engineer Interview Started",
+        description: `Your ${type} interview session for Frontend Engineer position has begun!`,
       });
     } catch (error) {
       console.error('Error starting session:', error);
@@ -80,7 +80,7 @@ const Interview = () => {
       
       toast({
         title: "Interview Completed",
-        description: "Your session has been saved. Check your dashboard for feedback!",
+        description: "Your Frontend Engineer session has been saved. Check your dashboard for feedback!",
       });
     } catch (error) {
       console.error('Error ending session:', error);
@@ -122,12 +122,18 @@ const Interview = () => {
           </div>
 
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-primary mb-4">
-              AI Interview Practice
-            </h1>
+            <div className="flex items-center justify-center space-x-3 mb-4">
+              <Code2 className="w-10 h-10 text-primary" />
+              <h1 className="text-4xl font-bold text-primary">
+                Frontend Engineer Interview
+              </h1>
+            </div>
             <p className="text-lg text-medium-gray">
-              Choose your interview format and start practicing with our AI interviewer
+              Practice technical interviews for Frontend Engineer positions with our AI interviewer
             </p>
+            <div className="mt-4 inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-medium">
+              Specialized for Frontend Engineering Roles
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
@@ -141,15 +147,15 @@ const Interview = () => {
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
-                  Experience a fully immersive video interview with live AI interaction, camera, and real-time voice responses.
+                  Experience a fully immersive video interview with live AI interaction focused on Frontend Engineering skills and challenges.
                 </p>
                 <div className="space-y-2 text-sm text-medium-gray">
                   <div>✓ Live video with AI interviewer</div>
-                  <div>✓ Camera and microphone enabled</div>
-                  <div>✓ Real-time speech interaction</div>
+                  <div>✓ Frontend-specific technical questions</div>
+                  <div>✓ React, JavaScript, CSS focus</div>
                   <div>✓ Adaptive question progression</div>
-                  <div>✓ 2-minute session duration</div>
-                  <div>✓ Professional interview simulation</div>
+                  <div>✓ 2-minute technical assessment</div>
+                  <div>✓ Performance & architecture topics</div>
                 </div>
                 <Button 
                   onClick={() => startSession('video')}
@@ -171,14 +177,14 @@ const Interview = () => {
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
-                  Practice with interactive chat-based interviews. Includes voice recording for text input and real-time scoring.
+                  Practice with interactive chat-based interviews focusing on Frontend Engineering concepts and problem-solving.
                 </p>
                 <div className="space-y-2 text-sm text-medium-gray">
                   <div>✓ Real-time chat interaction</div>
                   <div>✓ Voice recording to text</div>
+                  <div>✓ Frontend coding discussions</div>
                   <div>✓ Live scoring (out of 5)</div>
-                  <div>✓ Instant feedback</div>
-                  <div>✓ Varied question progression</div>
+                  <div>✓ Technical deep-dive questions</div>
                   <div>✓ Self-paced interaction</div>
                 </div>
                 <Button 
@@ -190,6 +196,25 @@ const Interview = () => {
                 </Button>
               </CardContent>
             </Card>
+          </div>
+
+          {/* Additional Info */}
+          <div className="mt-12 bg-white rounded-xl p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-primary mb-4">What to Expect in Your Frontend Engineer Interview</h3>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-2">Technical Skills</h4>
+                <p className="text-sm text-medium-gray">Questions about JavaScript, React, CSS, HTML, and modern frontend frameworks.</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-2">Problem Solving</h4>
+                <p className="text-sm text-medium-gray">Real-world scenarios about performance optimization, debugging, and architecture decisions.</p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-2">Best Practices</h4>
+                <p className="text-sm text-medium-gray">Testing methodologies, accessibility, responsive design, and code quality discussions.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

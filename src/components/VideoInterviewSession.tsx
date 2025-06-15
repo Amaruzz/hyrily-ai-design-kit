@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,10 +19,10 @@ interface InterviewQuestion {
   category: string;
 }
 
-const baseQuestions: InterviewQuestion[] = [
-  { id: 1, question: "Hello! Welcome to your interview session with Hyrily. I'm your AI interviewer. Let's start with: Can you tell me about yourself and your background?", category: "Introduction" },
-  { id: 2, question: "What interests you about this role and what makes you a good fit for our company?", category: "Motivation" },
-  { id: 3, question: "Describe a challenging project you worked on and how you overcame the obstacles.", category: "Problem Solving" },
+const frontendEngineerQuestions: InterviewQuestion[] = [
+  { id: 1, question: "Hello! Welcome to your Frontend Engineer interview session with Hyrily. I'm your AI interviewer. Let's start with: Can you tell me about yourself and your experience with frontend technologies?", category: "Introduction" },
+  { id: 2, question: "What frontend frameworks and libraries have you worked with? Which one do you prefer and why?", category: "Technical Skills" },
+  { id: 3, question: "Describe a challenging frontend project you worked on. What technologies did you use and what obstacles did you overcome?", category: "Problem Solving" },
 ];
 
 const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessionProps) => {
@@ -35,7 +34,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [responses, setResponses] = useState<Record<number, { text: string; score: number }>>({});
   const [sessionTime, setSessionTime] = useState(0);
-  const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(baseQuestions);
+  const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(frontendEngineerQuestions);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [realTimeTranscript, setRealTimeTranscript] = useState('');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
@@ -71,7 +70,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
           if (newTime >= 120) { // 2 minutes
             toast({
               title: "Time's Up!",
-              description: "Your 2-minute interview session has ended. Generating feedback report...",
+              description: "Your 2-minute Frontend Engineer interview has ended. Generating feedback report...",
             });
             setTimeout(() => {
               endInterviewAndShowReport();
@@ -230,7 +229,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     
     toast({
       title: "Recording Started",
-      description: "Hyrily is now listening to your response. Speak clearly.",
+      description: "Hyrily is now listening to your frontend engineering response. Speak clearly.",
     });
   };
 
@@ -241,7 +240,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     
     toast({
       title: "Processing...",
-      description: "Hyrily is analyzing your response...",
+      description: "Hyrily is analyzing your frontend engineering response...",
     });
     
     setTimeout(async () => {
@@ -267,19 +266,20 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     try {
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
-          prompt: `As an AI interviewer, evaluate this candidate's response to the interview question. 
+          prompt: `As an AI interviewer for a Frontend Engineer position, evaluate this candidate's response to the interview question. 
 
 Question: ${question}
 
 Candidate Response: ${response}
 
-Provide only a numerical score from 1-5 based on:
-- Relevance and completeness of the answer (40%)
-- Communication clarity (30%) 
-- Examples and specificity (20%)
-- Professional presentation (10%)
+Evaluate based on Frontend Engineering criteria:
+- Technical knowledge of frontend technologies (30%)
+- Problem-solving approach and methodology (25%)
+- Communication clarity and examples (20%)
+- Understanding of best practices (15%)
+- Innovation and modern frontend trends (10%)
 
-Return only the numerical score (e.g., "4.2")`,
+Provide only a numerical score from 1-5 (e.g., "4.2")`,
           type: 'feedback'
         }
       });
@@ -299,16 +299,26 @@ Return only the numerical score (e.g., "4.2")`,
     try {
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
-          prompt: `As Hyrily, an AI interviewer, analyze the candidate's response and generate an appropriate follow-up question.
+          prompt: `As Hyrily, an AI interviewer conducting a Frontend Engineer interview, analyze the candidate's response and generate an appropriate technical follow-up question.
 
 Previous Question: ${interviewQuestions[currentQuestionIndex].question}
 Candidate's Response: ${previousResponse}
 
-Based on their answer, create a relevant follow-up question that:
-1. Builds on what they shared
-2. Explores their experience deeper
-3. Tests their problem-solving or interpersonal skills
+Based on their answer, create a relevant Frontend Engineering follow-up question that:
+1. Builds on their mentioned technologies or experience
+2. Tests deeper technical knowledge (React, JavaScript, CSS, performance, etc.)
+3. Explores their problem-solving in frontend development
 4. Remains professional and interview-appropriate
+5. Is specific to frontend engineering challenges
+
+Example areas to explore:
+- State management (Redux, Context API)
+- Performance optimization techniques
+- Responsive design and CSS frameworks
+- Testing methodologies for frontend
+- Build tools and deployment processes
+- Browser compatibility and debugging
+- Modern frontend architecture patterns
 
 Generate only the question text, nothing else.`,
           type: 'question'
@@ -317,11 +327,11 @@ Generate only the question text, nothing else.`,
 
       if (error) throw error;
 
-      const nextQuestion = data?.content || "Thank you for your responses. That concludes our interview.";
+      const nextQuestion = data?.content || "Thank you for your responses. That concludes our Frontend Engineer interview.";
       return nextQuestion;
     } catch (error) {
       console.error('Error generating next question:', error);
-      return "Thank you for your responses. That concludes our interview.";
+      return "Thank you for your responses. That concludes our Frontend Engineer interview.";
     }
   };
 
@@ -342,7 +352,7 @@ Generate only the question text, nothing else.`,
 
     toast({
       title: "Response Analyzed",
-      description: `Score: ${score}/5 - Hyrily is preparing the next question...`,
+      description: `Frontend Engineering Score: ${score}/5 - Hyrily is preparing the next technical question...`,
     });
 
     // Generate AI response based on candidate's answer
@@ -353,7 +363,7 @@ Generate only the question text, nothing else.`,
         const newQuestion: InterviewQuestion = {
           id: currentQuestionIndex + 2,
           question: nextQuestion,
-          category: "Follow-up"
+          category: "Technical Follow-up"
         };
 
         setInterviewQuestions(prev => {
@@ -422,12 +432,13 @@ Generate only the question text, nothing else.`,
               <Video className="w-10 h-10 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white mb-2">Video Interview</h2>
-              <p className="text-gray-300">Ready to start your 2-minute AI video interview with Hyrily?</p>
+              <h2 className="text-2xl font-bold text-white mb-2">Frontend Engineer Interview</h2>
+              <p className="text-gray-300">Ready to start your 2-minute AI video interview for Frontend Engineer position?</p>
             </div>
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
-              <p>• Voice recording with real-time feedback</p>
+              <p>• Frontend engineering specific questions</p>
+              <p>• Technical skills assessment</p>
               <p>• Adaptive questions based on your responses</p>
               <p>• 2-minute session with detailed feedback report</p>
             </div>
@@ -436,7 +447,7 @@ Generate only the question text, nothing else.`,
               className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
               size="lg"
             >
-              Start Video Interview
+              Start Frontend Engineer Interview
             </Button>
           </CardContent>
         </Card>
@@ -475,7 +486,7 @@ Generate only the question text, nothing else.`,
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold text-gray-800">Hyrily, Your AI Interviewer</h2>
+              <h2 className="text-xl font-semibold text-gray-800">Hyrily - Frontend Engineer Interviewer</h2>
               <Badge className="mt-2 bg-blue-100 text-blue-800">{currentQuestion.category}</Badge>
             </div>
 
@@ -505,7 +516,7 @@ Generate only the question text, nothing else.`,
                 ) : isRecording ? (
                   <>
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                    <span className="text-gray-600">Recording your response...</span>
+                    <span className="text-gray-600">Recording your technical response...</span>
                   </>
                 ) : isWaitingForResponse ? (
                   <>
