@@ -44,10 +44,15 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(baseQuestions);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [realTimeTranscript, setRealTimeTranscript] = useState('');
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   const {
@@ -72,7 +77,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       sessionTimerRef.current = setInterval(() => {
         setSessionTime(prev => {
           const newTime = prev + 1;
-          if (newTime >= 3600) {
+          if (newTime >= 3600) { // 60 minutes
             toast({
               title: "Time's Up!",
               description: "Your 60-minute interview session has ended.",
@@ -93,7 +98,24 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     };
   }, [interviewStarted, onEndSession, toast]);
 
-  // Start camera with proper error handling
+  // Audio level monitoring
+  const updateAudioLevel = () => {
+    if (analyserRef.current && isMicOn) {
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      analyserRef.current.getByteFrequencyData(dataArray);
+      
+      // Calculate average audio level
+      const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+      const normalizedLevel = Math.min(100, (average / 128) * 100);
+      setAudioLevel(normalizedLevel);
+    }
+    
+    if (isMicOn) {
+      animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+    }
+  };
+
+  // Start camera and audio analysis
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -102,30 +124,46 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
           height: { ideal: 720 },
           facingMode: 'user'
         },
-        audio: true
+        audio: {
+          sampleRate: 24000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Ensure video plays
         videoRef.current.onloadedmetadata = () => {
           videoRef.current?.play().catch(console.error);
         };
       }
       
       streamRef.current = stream;
+      
+      // Set up audio analysis for level monitoring
+      audioContextRef.current = new AudioContext();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 256;
+      
       setIsCameraOn(true);
       setIsMicOn(true);
       
+      // Start audio level monitoring
+      updateAudioLevel();
+      
       toast({
-        title: "Camera Started",
-        description: "Your camera and microphone are now active",
+        title: "Camera & Microphone Started",
+        description: "Your camera and microphone are now active. You can see the audio levels next to the mic button.",
       });
     } catch (error) {
       console.error('Error accessing camera:', error);
       toast({
         title: "Camera Error",
-        description: "Unable to access camera. Please check permissions and try again.",
+        description: "Unable to access camera/microphone. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -141,8 +179,18 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       videoRef.current.srcObject = null;
     }
     
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
     setIsCameraOn(false);
     setIsMicOn(false);
+    setAudioLevel(0);
   };
 
   const speakQuestion = async (questionText: string) => {
@@ -162,13 +210,16 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         utterance.onend = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
+          console.log('Hyrily finished speaking, waiting for candidate response');
         };
 
         utterance.onerror = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
+          console.log('Speech synthesis error, moving to response phase');
         };
 
+        console.log('Hyrily is speaking:', questionText);
         speechSynthesis.speak(utterance);
       } else {
         setIsAISpeaking(false);
@@ -200,39 +251,64 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       return;
     }
 
+    console.log('Starting voice recording...');
     resetTranscript();
     setRealTimeTranscript('');
     setIsRecording(true);
+    setIsProcessingAudio(true);
     startListening();
     
     toast({
       title: "Recording Started",
-      description: "Speak now. Hyrily is listening to your response.",
+      description: "Hyrily is now listening to your response. Speak clearly.",
     });
   };
 
   const stopRecording = async () => {
+    console.log('Stopping voice recording...');
     setIsRecording(false);
+    setIsProcessingAudio(false);
     stopListening();
     
-    if (transcript.trim()) {
-      await submitResponse(transcript.trim());
-    } else {
-      toast({
-        title: "No Speech Detected",
-        description: "Please try recording again.",
-        variant: "destructive",
-      });
-    }
-    
-    setRealTimeTranscript('');
+    // Give a small delay to ensure final transcript is captured
+    setTimeout(async () => {
+      const finalTranscript = transcript.trim();
+      console.log('Final transcript captured:', finalTranscript);
+      
+      if (finalTranscript) {
+        await submitResponse(finalTranscript);
+      } else {
+        toast({
+          title: "No Speech Detected",
+          description: "Please try recording again. Make sure to speak clearly.",
+          variant: "destructive",
+        });
+        setIsWaitingForResponse(true);
+      }
+      
+      setRealTimeTranscript('');
+    }, 1000);
   };
 
   const generateScore = async (question: string, response: string): Promise<number> => {
     try {
+      console.log('Generating score for response:', response.substring(0, 100) + '...');
+      
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
-          prompt: `Question: ${question}\n\nCandidate Response: ${response}\n\nProvide only a numerical score from 1-5 for this interview response.`,
+          prompt: `As an AI interviewer, evaluate this candidate's response to the interview question. 
+
+Question: ${question}
+
+Candidate Response: ${response}
+
+Provide only a numerical score from 1-5 based on:
+- Relevance and completeness of the answer (40%)
+- Communication clarity (30%) 
+- Examples and specificity (20%)
+- Professional presentation (10%)
+
+Return only the numerical score (e.g., "4.2")`,
           type: 'feedback'
         }
       });
@@ -240,7 +316,9 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       if (error) throw error;
 
       const scoreMatch = data?.content?.match(/(\d+(?:\.\d+)?)/);
-      return scoreMatch ? Math.min(5, Math.max(1, parseFloat(scoreMatch[1]))) : 3;
+      const score = scoreMatch ? Math.min(5, Math.max(1, parseFloat(scoreMatch[1]))) : 3;
+      console.log('Generated score:', score);
+      return score;
     } catch (error) {
       console.error('Error generating score:', error);
       return 3;
@@ -249,16 +327,32 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
 
   const generateNextQuestion = async (previousResponse: string): Promise<string> => {
     try {
+      console.log('Generating next question based on response:', previousResponse.substring(0, 100) + '...');
+      
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
-          prompt: `Based on the candidate's response: "${previousResponse}", generate the next appropriate interview question. Make it relevant to their answer and different from previous questions. Keep it professional and interview-appropriate. Don't repeat similar questions.`,
+          prompt: `As Hyrily, an AI interviewer, analyze the candidate's response and generate an appropriate follow-up question.
+
+Previous Question: ${interviewQuestions[currentQuestionIndex].question}
+Candidate's Response: ${previousResponse}
+
+Based on their answer, create a relevant follow-up question that:
+1. Builds on what they shared
+2. Explores their experience deeper
+3. Tests their problem-solving or interpersonal skills
+4. Remains professional and interview-appropriate
+5. Is different from questions already asked
+
+Generate only the question text, nothing else. Make it conversational and engaging.`,
           type: 'question'
         }
       });
 
       if (error) throw error;
 
-      return data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
+      const nextQuestion = data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
+      console.log('Generated next question:', nextQuestion);
+      return nextQuestion;
     } catch (error) {
       console.error('Error generating next question:', error);
       return interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
@@ -266,6 +360,9 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   };
 
   const submitResponse = async (responseText: string) => {
+    console.log('Processing candidate response:', responseText);
+    setIsWaitingForResponse(false);
+    
     const currentQuestion = interviewQuestions[currentQuestionIndex];
     const score = await generateScore(currentQuestion.question, responseText);
     
@@ -278,13 +375,11 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     }));
 
     toast({
-      title: "Response Recorded",
-      description: `Score: ${score}/5 - Hyrily is analyzing your response...`,
+      title: "Response Analyzed",
+      description: `Score: ${score}/5 - Hyrily is preparing the next question...`,
     });
 
-    setIsWaitingForResponse(false);
-
-    // Generate AI response based on candidate's answer
+    // Generate AI response based on candidate's answer after 2-3 seconds
     setTimeout(async () => {
       if (currentQuestionIndex < 9) {
         const nextQuestion = await generateNextQuestion(responseText);
@@ -310,7 +405,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       } else {
         toast({
           title: "Interview Complete!",
-          description: "Thank you for completing the interview.",
+          description: "Thank you for completing the interview with Hyrily.",
         });
         setTimeout(() => {
           onEndSession();
@@ -335,6 +430,18 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     }
   }, [currentQuestionIndex, interviewStarted]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
+
   const currentQuestion = interviewQuestions[currentQuestionIndex];
   const answeredCount = Object.keys(responses).length;
   const averageScore = answeredCount > 0 
@@ -358,13 +465,14 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white mb-2">Video Interview</h2>
-              <p className="text-gray-300">Ready to start your live AI video interview?</p>
+              <p className="text-gray-300">Ready to start your live AI video interview with Hyrily?</p>
             </div>
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
-              <p>• Adaptive question progression based on your responses</p>
-              <p>• Real-time speech recognition and analysis</p>
+              <p>• Voice recording with real-time feedback</p>
+              <p>• Adaptive questions based on your responses</p>
               <p>• 60-minute session duration</p>
+              <p>• Professional interview simulation</p>
             </div>
             <Button 
               onClick={startInterview}
@@ -447,6 +555,11 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Your turn to respond</span>
                   </>
+                ) : isProcessingAudio ? (
+                  <>
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Processing your response...</span>
+                  </>
                 ) : (
                   <>
                     <div className="w-2 h-2 bg-gray-400 rounded-full" />
@@ -520,29 +633,59 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
                 🔴 RECORDING
               </div>
             )}
+
+            {/* Processing indicator */}
+            {isProcessingAudio && !isRecording && (
+              <div className="absolute top-4 left-4 bg-yellow-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+                🔄 PROCESSING...
+              </div>
+            )}
           </div>
 
           {/* Bottom Controls */}
           <div className="bg-black/50 p-6 flex items-center justify-center space-x-4">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => {
-                if (isMicOn) {
-                  setIsMicOn(false);
-                } else {
-                  setIsMicOn(true);
-                }
-              }}
-              className={`rounded-full w-12 h-12 ${isMicOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
-            >
-              {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-            </Button>
+            {/* Microphone with Audio Level Indicator */}
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  if (isMicOn) {
+                    setIsMicOn(false);
+                  } else {
+                    setIsMicOn(true);
+                  }
+                }}
+                className={`rounded-full w-12 h-12 ${isMicOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
+              >
+                {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              </Button>
+              
+              {/* Audio Level Bars */}
+              {isMicOn && (
+                <div className="flex items-center space-x-1">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-1 rounded-full transition-all duration-200 ${
+                        audioLevel > (i * 20) ? 'bg-green-500' : 'bg-gray-600'
+                      }`}
+                      style={{
+                        height: `${Math.max(4, (audioLevel / 100) * 20)}px`
+                      }}
+                    />
+                  ))}
+                  <span className="text-xs text-gray-400 ml-2">
+                    {Math.round(audioLevel)}%
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Record Button */}
             <Button
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={!isWaitingForResponse || isAISpeaking || !isMicOn}
+              disabled={!isWaitingForResponse || isAISpeaking || !isMicOn || isProcessingAudio}
               className={`rounded-full px-6 py-3 ${
                 isRecording 
                   ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
