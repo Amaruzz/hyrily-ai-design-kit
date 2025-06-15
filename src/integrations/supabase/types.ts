@@ -9,7 +9,141 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      feedback_templates: {
+        Row: {
+          category: string | null
+          follow_up_questions: string[] | null
+          id: string
+          improvement_suggestions: string[] | null
+          positive_feedback: string[] | null
+          score_range: string | null
+        }
+        Insert: {
+          category?: string | null
+          follow_up_questions?: string[] | null
+          id?: string
+          improvement_suggestions?: string[] | null
+          positive_feedback?: string[] | null
+          score_range?: string | null
+        }
+        Update: {
+          category?: string | null
+          follow_up_questions?: string[] | null
+          id?: string
+          improvement_suggestions?: string[] | null
+          positive_feedback?: string[] | null
+          score_range?: string | null
+        }
+        Relationships: []
+      }
+      interview_questions: {
+        Row: {
+          created_at: string | null
+          difficulty_level: number | null
+          expected_answer_framework: string | null
+          id: string
+          industry: string | null
+          question_text: string
+          question_type: string | null
+          tags: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          difficulty_level?: number | null
+          expected_answer_framework?: string | null
+          id?: string
+          industry?: string | null
+          question_text: string
+          question_type?: string | null
+          tags?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          difficulty_level?: number | null
+          expected_answer_framework?: string | null
+          id?: string
+          industry?: string | null
+          question_text?: string
+          question_type?: string | null
+          tags?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_performance: {
+        Row: {
+          current_score: number | null
+          id: string
+          improvement_rate: number | null
+          last_updated: string | null
+          sessions_completed: number | null
+          skill_category: string | null
+          user_id: string | null
+        }
+        Insert: {
+          current_score?: number | null
+          id?: string
+          improvement_rate?: number | null
+          last_updated?: string | null
+          sessions_completed?: number | null
+          skill_category?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          current_score?: number | null
+          id?: string
+          improvement_rate?: number | null
+          last_updated?: string | null
+          sessions_completed?: number | null
+          skill_category?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_sessions: {
+        Row: {
+          completed_at: string | null
+          duration_minutes: number | null
+          feedback: Json | null
+          id: string
+          questions_asked: string[] | null
+          responses: Json | null
+          scores: Json | null
+          session_type: string | null
+          started_at: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          duration_minutes?: number | null
+          feedback?: Json | null
+          id?: string
+          questions_asked?: string[] | null
+          responses?: Json | null
+          scores?: Json | null
+          session_type?: string | null
+          started_at?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          duration_minutes?: number | null
+          feedback?: Json | null
+          id?: string
+          questions_asked?: string[] | null
+          responses?: Json | null
+          scores?: Json | null
+          session_type?: string | null
+          started_at?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

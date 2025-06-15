@@ -1,8 +1,13 @@
+
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Play, ChartBar, Settings } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 const FeatureSection = () => {
+  const navigate = useNavigate();
+  
   const features = [
     {
       icon: Play,
@@ -78,9 +83,12 @@ const FeatureSection = () => {
           <div className="inline-flex items-center space-x-4 bg-white px-8 py-4 rounded-full shadow-card">
             <span className="text-body text-medium-gray">Ready to start practicing?</span>
             <div className="w-px h-6 bg-light-gray"></div>
-            <button className="text-body font-semibold text-accent hover:text-primary transition-colors">
+            <Button 
+              onClick={() => navigate('/interview')}
+              className="text-body font-semibold bg-accent hover:bg-accent/90 text-white"
+            >
               Get Started →
-            </button>
+            </Button>
           </div>
         </div>
       </div>
