@@ -38,16 +38,12 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(baseQuestions);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [realTimeTranscript, setRealTimeTranscript] = useState('');
-  const [audioLevel, setAudioLevel] = useState(0);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [showFeedbackReport, setShowFeedbackReport] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   const {
@@ -115,23 +111,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     setShowFeedbackReport(true);
   };
 
-  // Audio level monitoring
-  const updateAudioLevel = () => {
-    if (analyserRef.current && isMicOn) {
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteFrequencyData(dataArray);
-      
-      const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
-      const normalizedLevel = Math.min(100, (average / 128) * 100);
-      setAudioLevel(normalizedLevel);
-    }
-    
-    if (isMicOn) {
-      animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
-    }
-  };
-
-  // Start camera and audio analysis
+  // Start camera
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -157,19 +137,8 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       }
       
       streamRef.current = stream;
-      
-      // Set up audio analysis for level monitoring
-      audioContextRef.current = new AudioContext();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      source.connect(analyserRef.current);
-      analyserRef.current.fftSize = 256;
-      
       setIsCameraOn(true);
       setIsMicOn(true);
-      
-      // Start audio level monitoring
-      updateAudioLevel();
       
       toast({
         title: "Camera & Microphone Started",
@@ -195,18 +164,8 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       videoRef.current.srcObject = null;
     }
     
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-    
     setIsCameraOn(false);
     setIsMicOn(false);
-    setAudioLevel(0);
   };
 
   const speakQuestion = async (questionText: string) => {
@@ -266,7 +225,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     resetTranscript();
     setRealTimeTranscript('');
     setIsRecording(true);
-    setIsProcessingAudio(true);
+    setIsProcessingAudio(false);
     startListening();
     
     toast({
@@ -277,8 +236,13 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
 
   const stopRecording = async () => {
     setIsRecording(false);
-    setIsProcessingAudio(false);
+    setIsProcessingAudio(true);
     stopListening();
+    
+    toast({
+      title: "Processing...",
+      description: "Hyrily is analyzing your response...",
+    });
     
     setTimeout(async () => {
       const finalTranscript = transcript.trim();
@@ -292,6 +256,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
           variant: "destructive",
         });
         setIsWaitingForResponse(true);
+        setIsProcessingAudio(false);
       }
       
       setRealTimeTranscript('');
@@ -362,6 +327,7 @@ Generate only the question text, nothing else.`,
 
   const submitResponse = async (responseText: string) => {
     setIsWaitingForResponse(false);
+    setIsProcessingAudio(false);
     
     const currentQuestion = interviewQuestions[currentQuestionIndex];
     const score = await generateScore(currentQuestion.question, responseText);
@@ -423,18 +389,6 @@ Generate only the question text, nothing else.`,
       }, 1000);
     }
   }, [currentQuestionIndex, interviewStarted]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
-  }, []);
 
   // Show feedback report
   if (showFeedbackReport) {
@@ -621,7 +575,7 @@ Generate only the question text, nothing else.`,
               </div>
             )}
 
-            {/* Real-time transcript overlay */}
+            {/* Live transcript overlay */}
             {isRecording && realTimeTranscript && (
               <div className="absolute bottom-20 left-4 right-4 bg-black/80 rounded-lg p-4">
                 <p className="text-sm text-white">
@@ -647,43 +601,21 @@ Generate only the question text, nothing else.`,
 
           {/* Bottom Controls */}
           <div className="bg-black/50 p-6 flex items-center justify-center space-x-4">
-            {/* Microphone with Audio Level Indicator */}
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => {
-                  if (isMicOn) {
-                    setIsMicOn(false);
-                  } else {
-                    setIsMicOn(true);
-                  }
-                }}
-                className={`rounded-full w-12 h-12 ${isMicOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
-              >
-                {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-              </Button>
-              
-              {/* Audio Level Bars */}
-              {isMicOn && (
-                <div className="flex items-center space-x-1">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className={`w-1 rounded-full transition-all duration-200 ${
-                        audioLevel > (i * 20) ? 'bg-green-500' : 'bg-gray-600'
-                      }`}
-                      style={{
-                        height: `${Math.max(4, (audioLevel / 100) * 20)}px`
-                      }}
-                    />
-                  ))}
-                  <span className="text-xs text-gray-400 ml-2">
-                    {Math.round(audioLevel)}%
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* Microphone Button */}
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => {
+                if (isMicOn) {
+                  setIsMicOn(false);
+                } else {
+                  setIsMicOn(true);
+                }
+              }}
+              className={`rounded-full w-12 h-12 ${isMicOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
+            >
+              {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+            </Button>
 
             {/* Record Button */}
             <Button
