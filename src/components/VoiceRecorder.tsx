@@ -1,7 +1,6 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Play, Stop } from 'lucide-react';
+import { Mic, MicOff, Play, Square } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface VoiceRecorderProps {
@@ -134,7 +133,7 @@ const VoiceRecorder = ({ onAudioReady, isRecording, setIsRecording }: VoiceRecor
               </Button>
             ) : (
               <Button onClick={stopPlayback} variant="outline">
-                <Stop className="w-4 h-4 mr-2" />
+                <Square className="w-4 h-4 mr-2" />
                 Stop Playback
               </Button>
             )}
