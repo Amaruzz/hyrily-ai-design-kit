@@ -2,20 +2,21 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Mic, MessageSquare } from 'lucide-react';
+import { Mic, MessageSquare, Video } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import VoiceInterviewSession from '@/components/VoiceInterviewSession';
 import ChatInterviewSession from '@/components/ChatInterviewSession';
+import VideoInterviewSession from '@/components/VideoInterviewSession';
 import AuthWrapper from '@/components/AuthWrapper';
 
 const Interview = () => {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionType, setSessionType] = useState<'voice' | 'text'>('voice');
+  const [sessionType, setSessionType] = useState<'voice' | 'text' | 'video'>('voice');
   const { toast } = useToast();
 
-  const startSession = async (type: 'voice' | 'text') => {
+  const startSession = async (type: 'voice' | 'text' | 'video') => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -93,6 +94,11 @@ const Interview = () => {
             sessionId={sessionId}
             onEndSession={endSession}
           />
+        ) : sessionType === 'video' ? (
+          <VideoInterviewSession 
+            sessionId={sessionId}
+            onEndSession={endSession}
+          />
         ) : (
           <VoiceInterviewSession 
             sessionId={sessionId}
@@ -106,7 +112,7 @@ const Interview = () => {
   return (
     <AuthWrapper>
       <div className="min-h-screen bg-off-white py-8">
-        <div className="max-w-4xl mx-auto px-4">
+        <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-primary mb-4">
               AI Interview Practice
@@ -116,7 +122,35 @@ const Interview = () => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* Video Interview */}
+            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+              <CardHeader className="text-center">
+                <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Video className="w-8 h-8 text-purple-500" />
+                </div>
+                <CardTitle className="text-xl">Video Interview</CardTitle>
+              </CardHeader>
+              <CardContent className="text-center space-y-4">
+                <p className="text-medium-gray">
+                  Experience a fully immersive video interview with live AI interaction, camera, and real-time voice responses.
+                </p>
+                <div className="space-y-2 text-sm text-medium-gray">
+                  <div>✓ Live video with AI interviewer</div>
+                  <div>✓ Camera and microphone enabled</div>
+                  <div>✓ Real-time speech interaction</div>
+                  <div>✓ 60 seconds per question</div>
+                  <div>✓ Professional interview simulation</div>
+                </div>
+                <Button 
+                  onClick={() => startSession('video')}
+                  className="w-full bg-purple-500 hover:bg-purple-600"
+                >
+                  Start Video Interview
+                </Button>
+              </CardContent>
+            </Card>
+
             {/* Voice Interview */}
             <Card className="hover:shadow-lg transition-shadow cursor-pointer">
               <CardHeader className="text-center">
