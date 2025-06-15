@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { User } from '@supabase/supabase-js';
+import { AlertCircle, Mail } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface AuthWrapperProps {
   children: React.ReactNode;
@@ -18,6 +20,7 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -31,6 +34,11 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Hide email confirmation message when user successfully signs in
+      if (session?.user) {
+        setShowEmailConfirmation(false);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -39,6 +47,7 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setShowEmailConfirmation(false);
 
     try {
       if (isLogin) {
@@ -46,11 +55,30 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
           email,
           password,
         });
-        if (error) throw error;
-        toast({
-          title: "Welcome back!",
-          description: "You've successfully signed in.",
-        });
+        
+        if (error) {
+          if (error.message.includes('Email not confirmed')) {
+            setShowEmailConfirmation(true);
+            toast({
+              title: "Email Confirmation Required",
+              description: "Please check your email and click the confirmation link to verify your account.",
+              variant: "destructive",
+            });
+          } else if (error.message.includes('Invalid login credentials')) {
+            toast({
+              title: "Invalid Credentials",
+              description: "Please check your email and password and try again.",
+              variant: "destructive",
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          toast({
+            title: "Welcome back!",
+            description: "You've successfully signed in.",
+          });
+        }
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -59,11 +87,25 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
             emailRedirectTo: `${window.location.origin}/`
           }
         });
-        if (error) throw error;
-        toast({
-          title: "Account created!",
-          description: "Please check your email to verify your account.",
-        });
+        
+        if (error) {
+          if (error.message.includes('User already registered')) {
+            toast({
+              title: "Account Already Exists",
+              description: "An account with this email already exists. Try signing in instead.",
+              variant: "destructive",
+            });
+            setIsLogin(true);
+          } else {
+            throw error;
+          }
+        } else {
+          setShowEmailConfirmation(true);
+          toast({
+            title: "Account created!",
+            description: "Please check your email to verify your account before signing in.",
+          });
+        }
       }
     } catch (error: any) {
       toast({
@@ -92,6 +134,43 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
         description: error.message,
         variant: "destructive",
       });
+      setLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) {
+      toast({
+        title: "Email Required",
+        description: "Please enter your email address first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Confirmation Email Sent",
+        description: "Please check your email for the confirmation link.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -131,6 +210,27 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Email Confirmation Alert */}
+            {showEmailConfirmation && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <Mail className="h-4 w-4" />
+                <AlertDescription className="text-blue-700">
+                  {isLogin 
+                    ? "Your email needs to be confirmed before you can sign in. Check your email for the confirmation link."
+                    : "We've sent you a confirmation email. Please check your inbox and click the link to verify your account."
+                  }
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-blue-600 underline ml-2"
+                    onClick={handleResendConfirmation}
+                    disabled={loading}
+                  >
+                    Resend email
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Google Sign-In Button */}
             <Button
               onClick={handleGoogleSignIn}
@@ -195,11 +295,21 @@ const AuthWrapper = ({ children }: AuthWrapperProps) => {
             </form>
             <div className="mt-4 text-center">
               <button
-                onClick={() => setIsLogin(!isLogin)}
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setShowEmailConfirmation(false);
+                }}
                 className="text-accent hover:underline"
               >
                 {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
               </button>
+            </div>
+
+            {/* Quick Test Account Info */}
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-xs text-yellow-800">
+                <strong>For testing:</strong> Email confirmation is required. After signing up, check your email for the confirmation link before signing in.
+              </p>
             </div>
           </CardContent>
         </Card>
