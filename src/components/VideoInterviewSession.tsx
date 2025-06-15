@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,6 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [sessionTime, setSessionTime] = useState(0);
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(frontendEngineerQuestions);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [realTimeTranscript, setRealTimeTranscript] = useState('');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [showFeedbackReport, setShowFeedbackReport] = useState(false);
   
@@ -47,19 +47,26 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
 
   const {
     transcript,
+    interimTranscript,
+    finalTranscript,
     isListening,
     startListening,
     stopListening,
     resetTranscript,
-    isSupported
+    isSupported,
+    error: speechError
   } = useSpeechRecognition();
 
-  // Update real-time transcript during recording
+  // Display speech recognition errors
   useEffect(() => {
-    if (isRecording && transcript) {
-      setRealTimeTranscript(transcript);
+    if (speechError) {
+      toast({
+        title: "Speech Recognition Issue",
+        description: speechError,
+        variant: "destructive",
+      });
     }
-  }, [transcript, isRecording]);
+  }, [speechError, toast]);
 
   // 2-minute session timer
   useEffect(() => {
@@ -93,7 +100,10 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       clearInterval(sessionTimerRef.current);
     }
     
-    // Stop camera and mic
+    // Stop recording and camera
+    if (isRecording) {
+      stopRecording();
+    }
     stopCamera();
     
     // Update session in database
@@ -140,8 +150,8 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       setIsMicOn(true);
       
       toast({
-        title: "Camera & Microphone Started",
-        description: "Your camera and microphone are now active.",
+        title: "Camera & Microphone Ready",
+        description: "Your camera and microphone are now active. Speech recognition is ready.",
       });
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -183,11 +193,13 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         utterance.onend = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
+          console.log('AI finished speaking, candidate can now respond');
         };
 
         utterance.onerror = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
+          console.log('Speech synthesis error, candidate can now respond');
         };
 
         speechSynthesis.speak(utterance);
@@ -206,7 +218,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     if (!isSupported) {
       toast({
         title: "Speech Recognition Not Supported",
-        description: "Your browser doesn't support speech recognition.",
+        description: "Your browser doesn't support speech recognition. Please use Chrome or Edge.",
         variant: "destructive",
       });
       return;
@@ -221,8 +233,8 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       return;
     }
 
+    console.log('Starting recording...');
     resetTranscript();
-    setRealTimeTranscript('');
     setIsRecording(true);
     setIsProcessingAudio(false);
     startListening();
@@ -234,32 +246,33 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   };
 
   const stopRecording = async () => {
+    console.log('Stopping recording...');
     setIsRecording(false);
     setIsProcessingAudio(true);
     stopListening();
     
     toast({
-      title: "Processing...",
+      title: "Processing Response...",
       description: "Hyrily is analyzing your frontend engineering response...",
     });
     
+    // Wait a moment for final speech processing
     setTimeout(async () => {
-      const finalTranscript = transcript.trim();
+      const finalResponse = finalTranscript.trim() || transcript.trim();
+      console.log('Final transcript:', finalResponse);
       
-      if (finalTranscript) {
-        await submitResponse(finalTranscript);
+      if (finalResponse) {
+        await submitResponse(finalResponse);
       } else {
         toast({
           title: "No Speech Detected",
-          description: "Please try recording again. Make sure to speak clearly.",
+          description: "Please try recording again. Make sure to speak clearly and check your microphone.",
           variant: "destructive",
         });
         setIsWaitingForResponse(true);
         setIsProcessingAudio(false);
       }
-      
-      setRealTimeTranscript('');
-    }, 1000);
+    }, 1500); // Give more time for final processing
   };
 
   const generateScore = async (question: string, response: string): Promise<number> => {
@@ -423,6 +436,11 @@ Generate only the question text, nothing else.`,
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Get current transcript to display
+  const currentTranscript = isRecording 
+    ? (interimTranscript || transcript || 'Listening...') 
+    : (finalTranscript || transcript);
+
   if (!interviewStarted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center">
@@ -438,7 +456,7 @@ Generate only the question text, nothing else.`,
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
               <p>• Frontend engineering specific questions</p>
-              <p>• Technical skills assessment</p>
+              <p>• Real-time speech recognition</p>
               <p>• Adaptive questions based on your responses</p>
               <p>• 2-minute session with detailed feedback report</p>
             </div>
@@ -518,6 +536,11 @@ Generate only the question text, nothing else.`,
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Recording your technical response...</span>
                   </>
+                ) : isListening ? (
+                  <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Listening for speech...</span>
+                  </>
                 ) : isWaitingForResponse ? (
                   <>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -587,11 +610,18 @@ Generate only the question text, nothing else.`,
             )}
 
             {/* Live transcript overlay */}
-            {isRecording && realTimeTranscript && (
+            {(isRecording || isListening) && currentTranscript && (
               <div className="absolute bottom-20 left-4 right-4 bg-black/80 rounded-lg p-4">
                 <p className="text-sm text-white">
-                  <span className="text-green-400 font-semibold">Live transcript:</span> {realTimeTranscript}
+                  <span className="text-green-400 font-semibold">
+                    {isRecording ? 'Live transcript:' : 'Processing:'}
+                  </span> {currentTranscript}
                 </p>
+                {interimTranscript && (
+                  <p className="text-xs text-gray-300 mt-1">
+                    <span className="text-yellow-400">Interim:</span> {interimTranscript}
+                  </p>
+                )}
               </div>
             )}
 
@@ -599,6 +629,13 @@ Generate only the question text, nothing else.`,
             {isRecording && (
               <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
                 🔴 RECORDING
+              </div>
+            )}
+
+            {/* Listening indicator */}
+            {isListening && !isRecording && (
+              <div className="absolute top-4 left-4 bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
+                🎤 LISTENING
               </div>
             )}
 
