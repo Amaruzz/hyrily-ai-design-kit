@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Mic, MicOff, Video, VideoOff, Phone, MessageSquare, Clock } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Phone, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -43,6 +43,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
   const [sessionTime, setSessionTime] = useState(0);
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>(baseQuestions);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [realTimeTranscript, setRealTimeTranscript] = useState('');
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -58,13 +59,19 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     isSupported
   } = useSpeechRecognition();
 
+  // Update real-time transcript during recording
+  useEffect(() => {
+    if (isRecording && transcript) {
+      setRealTimeTranscript(transcript);
+    }
+  }, [transcript, isRecording]);
+
   // 60-minute session timer
   useEffect(() => {
     if (interviewStarted) {
       sessionTimerRef.current = setInterval(() => {
         setSessionTime(prev => {
           const newTime = prev + 1;
-          // Auto-end after 60 minutes (3600 seconds)
           if (newTime >= 3600) {
             toast({
               title: "Time's Up!",
@@ -84,18 +91,26 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
         clearInterval(sessionTimerRef.current);
       }
     };
-  }, [interviewStarted, onEndSession]);
+  }, [interviewStarted, onEndSession, toast]);
 
-  // Start camera
+  // Start camera with proper error handling
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
         audio: true
       });
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Ensure video plays
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(console.error);
+        };
       }
       
       streamRef.current = stream;
@@ -110,7 +125,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       console.error('Error accessing camera:', error);
       toast({
         title: "Camera Error",
-        description: "Unable to access camera. Please check permissions.",
+        description: "Unable to access camera. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -136,12 +151,20 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     
     try {
       if ('speechSynthesis' in window) {
+        // Stop any ongoing speech
+        speechSynthesis.cancel();
+        
         const utterance = new SpeechSynthesisUtterance(questionText);
         utterance.rate = 0.9;
         utterance.pitch = 1;
         utterance.volume = 1;
         
         utterance.onend = () => {
+          setIsAISpeaking(false);
+          setIsWaitingForResponse(true);
+        };
+
+        utterance.onerror = () => {
           setIsAISpeaking(false);
           setIsWaitingForResponse(true);
         };
@@ -168,9 +191,24 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
       return;
     }
 
+    if (!isMicOn) {
+      toast({
+        title: "Microphone Required",
+        description: "Please enable your microphone first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     resetTranscript();
+    setRealTimeTranscript('');
     setIsRecording(true);
     startListening();
+    
+    toast({
+      title: "Recording Started",
+      description: "Speak now. Hyrily is listening to your response.",
+    });
   };
 
   const stopRecording = async () => {
@@ -179,7 +217,15 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     
     if (transcript.trim()) {
       await submitResponse(transcript.trim());
+    } else {
+      toast({
+        title: "No Speech Detected",
+        description: "Please try recording again.",
+        variant: "destructive",
+      });
     }
+    
+    setRealTimeTranscript('');
   };
 
   const generateScore = async (question: string, response: string): Promise<number> => {
@@ -205,17 +251,17 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     try {
       const { data, error } = await supabase.functions.invoke('gemini-chat', {
         body: {
-          prompt: `Based on the candidate's response: "${previousResponse}", generate the next appropriate interview question. Make it relevant to their answer and different from previous questions. Keep it professional and interview-appropriate.`,
+          prompt: `Based on the candidate's response: "${previousResponse}", generate the next appropriate interview question. Make it relevant to their answer and different from previous questions. Keep it professional and interview-appropriate. Don't repeat similar questions.`,
           type: 'question'
         }
       });
 
       if (error) throw error;
 
-      return data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses.";
+      return data?.content || interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
     } catch (error) {
       console.error('Error generating next question:', error);
-      return interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses.";
+      return interviewQuestions[currentQuestionIndex + 1]?.question || "Thank you for your responses. That concludes our interview.";
     }
   };
 
@@ -232,18 +278,17 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
     }));
 
     toast({
-      title: "Response Submitted",
-      description: `Score: ${score}/5`,
+      title: "Response Recorded",
+      description: `Score: ${score}/5 - Hyrily is analyzing your response...`,
     });
 
     setIsWaitingForResponse(false);
 
-    // Generate next question based on response
+    // Generate AI response based on candidate's answer
     setTimeout(async () => {
-      if (currentQuestionIndex < 9) { // Limit to 10 questions
+      if (currentQuestionIndex < 9) {
         const nextQuestion = await generateNextQuestion(responseText);
         
-        // Add the new question to our list
         const newQuestion: InterviewQuestion = {
           id: currentQuestionIndex + 2,
           question: nextQuestion,
@@ -271,7 +316,7 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
           onEndSession();
         }, 3000);
       }
-    }, 2500); // 2.5 second delay as requested
+    }, 2500);
   };
 
   const startInterview = async () => {
@@ -317,8 +362,8 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             </div>
             <div className="space-y-2 text-sm text-gray-400">
               <p>• Live video interaction with AI interviewer</p>
-              <p>• Adaptive question progression</p>
-              <p>• Real-time speech recognition</p>
+              <p>• Adaptive question progression based on your responses</p>
+              <p>• Real-time speech recognition and analysis</p>
               <p>• 60-minute session duration</p>
             </div>
             <Button 
@@ -392,6 +437,11 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                     <span className="text-gray-600">Hyrily is Speaking</span>
                   </>
+                ) : isRecording ? (
+                  <>
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-gray-600">Recording your response...</span>
+                  </>
                 ) : isWaitingForResponse ? (
                   <>
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -440,8 +490,10 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             <video
               ref={videoRef}
               autoPlay
+              playsInline
               muted
               className="w-full h-full object-cover"
+              style={{ transform: 'scaleX(-1)' }}
             />
             
             {!isCameraOn && (
@@ -453,12 +505,19 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
               </div>
             )}
 
-            {/* Live transcript overlay */}
-            {isRecording && transcript && (
-              <div className="absolute bottom-20 left-4 right-4 bg-black/70 rounded-lg p-3">
+            {/* Real-time transcript overlay */}
+            {isRecording && realTimeTranscript && (
+              <div className="absolute bottom-20 left-4 right-4 bg-black/80 rounded-lg p-4">
                 <p className="text-sm text-white">
-                  <span className="text-green-400">Live transcript:</span> {transcript}
+                  <span className="text-green-400 font-semibold">Live transcript:</span> {realTimeTranscript}
                 </p>
+              </div>
+            )}
+
+            {/* Recording indicator */}
+            {isRecording && (
+              <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
+                🔴 RECORDING
               </div>
             )}
           </div>
@@ -468,7 +527,13 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             <Button
               variant="outline"
               size="lg"
-              onClick={() => setIsMicOn(!isMicOn)}
+              onClick={() => {
+                if (isMicOn) {
+                  setIsMicOn(false);
+                } else {
+                  setIsMicOn(true);
+                }
+              }}
               className={`rounded-full w-12 h-12 ${isMicOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
             >
               {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
@@ -477,21 +542,27 @@ const VideoInterviewSession = ({ sessionId, onEndSession }: VideoInterviewSessio
             {/* Record Button */}
             <Button
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={!isWaitingForResponse || isAISpeaking}
-              className={`rounded-full w-16 h-16 ${
+              disabled={!isWaitingForResponse || isAISpeaking || !isMicOn}
+              className={`rounded-full px-6 py-3 ${
                 isRecording 
                   ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
-                  : 'bg-orange-500 hover:bg-orange-600'
+                  : 'bg-green-500 hover:bg-green-600'
               }`}
               size="lg"
             >
-              <Phone className="w-6 h-6" />
+              {isRecording ? 'Stop Recording' : 'Start Recording'}
             </Button>
 
             <Button
               variant="outline"
               size="lg"
-              onClick={() => setIsCameraOn(!isCameraOn)}
+              onClick={() => {
+                if (isCameraOn) {
+                  stopCamera();
+                } else {
+                  startCamera();
+                }
+              }}
               className={`rounded-full w-12 h-12 ${isCameraOn ? 'bg-white text-black' : 'bg-red-500 text-white'}`}
             >
               {isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
