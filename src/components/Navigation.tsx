@@ -2,9 +2,11 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
@@ -37,10 +39,17 @@ const Navigation = () => {
 
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            <Button variant="ghost" className="text-dark-gray hover:text-primary">
+            <Button 
+              variant="ghost" 
+              className="text-dark-gray hover:text-primary"
+              onClick={() => navigate('/interview')}
+            >
               Login
             </Button>
-            <Button className="bg-primary hover:bg-dark-gray text-white font-medium px-6">
+            <Button 
+              className="bg-primary hover:bg-dark-gray text-white font-medium px-6"
+              onClick={() => navigate('/interview')}
+            >
               Start Free Trial
             </Button>
           </div>
@@ -70,10 +79,17 @@ const Navigation = () => {
                 Contact
               </a>
               <div className="pt-4 pb-2 space-y-2">
-                <Button variant="ghost" className="w-full justify-start text-dark-gray">
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-dark-gray"
+                  onClick={() => navigate('/interview')}
+                >
                   Login
                 </Button>
-                <Button className="w-full bg-primary hover:bg-dark-gray text-white">
+                <Button 
+                  className="w-full bg-primary hover:bg-dark-gray text-white"
+                  onClick={() => navigate('/interview')}
+                >
                   Start Free Trial
                 </Button>
               </div>

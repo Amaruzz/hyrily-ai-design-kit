@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Play, Pause, MessageSquare } from 'lucide-react';
+import { Mic, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import InterviewSession from '@/components/InterviewSession';
+import ChatInterviewSession from '@/components/ChatInterviewSession';
 import AuthWrapper from '@/components/AuthWrapper';
 
 const Interview = () => {
@@ -87,11 +88,18 @@ const Interview = () => {
   if (isSessionActive && sessionId) {
     return (
       <AuthWrapper>
-        <InterviewSession 
-          sessionId={sessionId}
-          sessionType={sessionType}
-          onEndSession={endSession}
-        />
+        {sessionType === 'text' ? (
+          <ChatInterviewSession 
+            sessionId={sessionId}
+            onEndSession={endSession}
+          />
+        ) : (
+          <InterviewSession 
+            sessionId={sessionId}
+            sessionType={sessionType}
+            onEndSession={endSession}
+          />
+        )}
       </AuthWrapper>
     );
   }
@@ -146,12 +154,12 @@ const Interview = () => {
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
-                  Practice with text-based questions. Perfect for preparing your thoughts and structuring responses.
+                  Practice with interactive chat-based interviews. Get real-time scoring and immediate feedback on your responses.
                 </p>
                 <div className="space-y-2 text-sm text-medium-gray">
-                  <div>✓ Structured question format</div>
-                  <div>✓ Time to think & respond</div>
-                  <div>✓ Detailed written feedback</div>
+                  <div>✓ Real-time chat interaction</div>
+                  <div>✓ Live scoring (out of 5)</div>
+                  <div>✓ Instant feedback</div>
                 </div>
                 <Button 
                   onClick={() => startSession('text')}
