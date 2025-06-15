@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Mic, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import InterviewSession from '@/components/InterviewSession';
+import VoiceInterviewSession from '@/components/VoiceInterviewSession';
 import ChatInterviewSession from '@/components/ChatInterviewSession';
 import AuthWrapper from '@/components/AuthWrapper';
 
@@ -94,9 +94,8 @@ const Interview = () => {
             onEndSession={endSession}
           />
         ) : (
-          <InterviewSession 
+          <VoiceInterviewSession 
             sessionId={sessionId}
-            sessionType={sessionType}
             onEndSession={endSession}
           />
         )}
@@ -128,12 +127,14 @@ const Interview = () => {
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
-                  Practice with real-time voice conversations. Get immediate feedback on your speaking pace, clarity, and confidence.
+                  Experience a fully interactive voice interview. AI speaks questions aloud, you record your responses, and get real-time scoring.
                 </p>
                 <div className="space-y-2 text-sm text-medium-gray">
-                  <div>✓ Real-time voice interaction</div>
-                  <div>✓ Speech analysis & feedback</div>
-                  <div>✓ Natural conversation flow</div>
+                  <div>✓ AI speaks questions verbally</div>
+                  <div>✓ Voice-to-text response recording</div>
+                  <div>✓ 60 seconds per question</div>
+                  <div>✓ 10 diverse interview questions</div>
+                  <div>✓ Auto-skip if time expires</div>
                 </div>
                 <Button 
                   onClick={() => startSession('voice')}
@@ -154,12 +155,14 @@ const Interview = () => {
               </CardHeader>
               <CardContent className="text-center space-y-4">
                 <p className="text-medium-gray">
-                  Practice with interactive chat-based interviews. Get real-time scoring and immediate feedback on your responses.
+                  Practice with interactive chat-based interviews. Includes voice recording for text input and real-time scoring.
                 </p>
                 <div className="space-y-2 text-sm text-medium-gray">
                   <div>✓ Real-time chat interaction</div>
+                  <div>✓ Voice recording to text</div>
                   <div>✓ Live scoring (out of 5)</div>
                   <div>✓ Instant feedback</div>
+                  <div>✓ Varied question progression</div>
                 </div>
                 <Button 
                   onClick={() => startSession('text')}

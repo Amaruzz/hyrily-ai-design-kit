@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Send, StopCircle, Bot, User, Star } from 'lucide-react';
+import { Send, StopCircle, Bot, User, Star, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 interface Message {
   id: string;
@@ -21,6 +22,19 @@ interface ChatInterviewSessionProps {
   onEndSession: () => void;
 }
 
+const interviewQuestions = [
+  "Can you tell me about yourself and what type of role you're preparing for?",
+  "What motivates you in your work?",
+  "Describe a challenging project you worked on and how you overcame obstacles.",
+  "How do you handle working under pressure and tight deadlines?",
+  "Tell me about a time when you had to work with a difficult team member.",
+  "What are your greatest strengths and how do they apply to this role?",
+  "Describe a situation where you had to learn something new quickly.",
+  "How do you prioritize tasks when you have multiple deadlines?",
+  "Tell me about a time when you made a mistake and how you handled it.",
+  "Where do you see yourself in the next 5 years?"
+];
+
 const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
@@ -28,8 +42,19 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
   const [currentScore, setCurrentScore] = useState<number | null>(null);
   const [averageScore, setAverageScore] = useState<number>(0);
   const [questionCount, setQuestionCount] = useState(0);
+  const [usedQuestions, setUsedQuestions] = useState<Set<number>>(new Set());
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  const {
+    transcript,
+    isListening,
+    startListening,
+    stopListening,
+    resetTranscript,
+    isSupported
+  } = useSpeechRecognition();
 
   useEffect(() => {
     startInterview();
@@ -39,6 +64,13 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (transcript && !isListening && isRecordingVoice) {
+      setCurrentResponse(transcript);
+      setIsRecordingVoice(false);
+    }
+  }, [transcript, isListening, isRecordingVoice]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -47,29 +79,26 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
     const welcomeMessage: Message = {
       id: '1',
       type: 'question',
-      content: "Hello! I'm your AI interviewer. Let's start with a simple question: Can you tell me about yourself and what type of role you're preparing for?",
+      content: interviewQuestions[0],
       timestamp: new Date()
     };
     setMessages([welcomeMessage]);
     setQuestionCount(1);
+    setUsedQuestions(new Set([0]));
   };
 
-  const generateNextQuestion = async (responseText: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke('gemini-chat', {
-        body: {
-          prompt: `As an AI interviewer, based on the candidate's previous response: "${responseText}", generate the next appropriate interview question. Make it relevant to their background and progressively more challenging. Keep it conversational and professional.`,
-          type: 'next_question'
-        }
-      });
-
-      if (error) throw error;
-
-      return data?.content || "Tell me about a challenging project you worked on and how you overcame any obstacles.";
-    } catch (error) {
-      console.error('Error generating question:', error);
-      return "Tell me about a challenging project you worked on and how you overcame any obstacles.";
+  const getNextQuestion = () => {
+    const availableQuestions = interviewQuestions
+      .map((_, index) => index)
+      .filter(index => !usedQuestions.has(index));
+    
+    if (availableQuestions.length === 0) {
+      return "Thank you for completing the interview! We've covered all the questions.";
     }
+    
+    const randomIndex = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+    setUsedQuestions(prev => new Set([...prev, randomIndex]));
+    return interviewQuestions[randomIndex];
   };
 
   const generateFeedback = async (question: string, response: string) => {
@@ -97,6 +126,36 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
     }
   };
 
+  const startVoiceRecording = () => {
+    if (!isSupported) {
+      toast({
+        title: "Voice Recording Not Supported",
+        description: "Your browser doesn't support voice recognition.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    resetTranscript();
+    setIsRecordingVoice(true);
+    startListening();
+    
+    toast({
+      title: "Voice Recording Started",
+      description: "Speak clearly into your microphone",
+    });
+  };
+
+  const stopVoiceRecording = () => {
+    setIsRecordingVoice(false);
+    stopListening();
+    
+    toast({
+      title: "Voice Recording Stopped",
+      description: "Your speech has been converted to text",
+    });
+  };
+
   const handleSendResponse = async () => {
     if (!currentResponse.trim() || isLoading) return;
 
@@ -108,7 +167,9 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const responseText = currentResponse;
     setCurrentResponse('');
+    resetTranscript();
     setIsLoading(true);
 
     try {
@@ -117,7 +178,7 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
       const questionText = lastQuestion?.content || "";
 
       // Generate feedback
-      const { content: feedbackContent, score } = await generateFeedback(questionText, currentResponse);
+      const { content: feedbackContent, score } = await generateFeedback(questionText, responseText);
       
       const feedbackMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -137,8 +198,8 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
       setAverageScore(newAverage);
 
       // Generate next question after a short delay
-      setTimeout(async () => {
-        const nextQuestion = await generateNextQuestion(currentResponse);
+      setTimeout(() => {
+        const nextQuestion = getNextQuestion();
         const questionMessage: Message = {
           id: (Date.now() + 2).toString(),
           type: 'question',
@@ -229,24 +290,71 @@ const ChatInterviewSession = ({ sessionId, onEndSession }: ChatInterviewSessionP
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input */}
-                <div className="flex space-x-2">
-                  <Textarea
-                    placeholder="Type your response here..."
-                    value={currentResponse}
-                    onChange={(e) => setCurrentResponse(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    rows={3}
-                    className="resize-none"
-                    disabled={isLoading}
-                  />
-                  <Button 
-                    onClick={handleSendResponse}
-                    disabled={!currentResponse.trim() || isLoading}
-                    className="bg-accent hover:bg-accent/90"
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
+                {/* Input Section */}
+                <div className="space-y-3">
+                  {/* Voice Recording Status */}
+                  {isRecordingVoice && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                        <span className="text-red-600 font-medium">Recording... Speak clearly</span>
+                      </div>
+                      {transcript && (
+                        <div className="mt-2 p-2 bg-white rounded border">
+                          <p className="text-sm text-gray-600">Live Transcript:</p>
+                          <p className="text-sm">{transcript}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Voice Controls */}
+                  <div className="flex items-center space-x-2">
+                    {!isRecordingVoice ? (
+                      <Button
+                        onClick={startVoiceRecording}
+                        variant="outline"
+                        size="sm"
+                        disabled={isLoading}
+                      >
+                        <Mic className="w-4 h-4 mr-2" />
+                        Record Voice
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={stopVoiceRecording}
+                        variant="outline"
+                        size="sm"
+                        className="border-red-500 text-red-500 hover:bg-red-50"
+                      >
+                        <MicOff className="w-4 h-4 mr-2" />
+                        Stop Recording
+                      </Button>
+                    )}
+                    <span className="text-xs text-gray-500">
+                      {isSupported ? 'Voice-to-text available' : 'Voice not supported'}
+                    </span>
+                  </div>
+
+                  {/* Text Input */}
+                  <div className="flex space-x-2">
+                    <Textarea
+                      placeholder="Type your response here or use voice recording..."
+                      value={currentResponse}
+                      onChange={(e) => setCurrentResponse(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      rows={3}
+                      className="resize-none"
+                      disabled={isLoading || isRecordingVoice}
+                    />
+                    <Button 
+                      onClick={handleSendResponse}
+                      disabled={!currentResponse.trim() || isLoading || isRecordingVoice}
+                      className="bg-accent hover:bg-accent/90"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
